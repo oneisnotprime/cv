@@ -1,0 +1,86 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --font-inter: 'Inter', system-ui, sans-serif;
+    --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+  }
+
+  * {
+    @apply border-surface-600;
+  }
+
+  body {
+    @apply bg-surface-950 text-white antialiased;
+    font-feature-settings: 'cv11', 'ss01', 'ss03';
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    @apply bg-surface-900;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-surface-500 rounded-full;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-surface-600;
+  }
+}
+
+@layer components {
+  .glass {
+    @apply bg-white/5 backdrop-blur-md border border-white/10;
+  }
+  .glass-dark {
+    @apply bg-black/30 backdrop-blur-md border border-white/10;
+  }
+  .btn-primary {
+    @apply px-5 py-2.5 rounded-xl bg-brand-500 hover:bg-brand-400 text-white font-semibold transition-all duration-200 shadow-lg shadow-brand-500/20 hover:shadow-brand-400/30 active:scale-95;
+  }
+  .btn-secondary {
+    @apply px-5 py-2.5 rounded-xl border border-white/20 hover:border-white/40 text-white/80 hover:text-white font-medium transition-all duration-200 bg-white/5 hover:bg-white/10 active:scale-95;
+  }
+  .input-base {
+    @apply w-full px-3 py-2 bg-surface-800 border border-surface-600 rounded-xl text-white placeholder-white/30 focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500/30 transition-all;
+  }
+  .card {
+    @apply glass rounded-2xl overflow-hidden;
+  }
+  .badge {
+    @apply inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium;
+  }
+  .gradient-text {
+    @apply bg-gradient-to-r from-brand-300 via-purple-400 to-pink-400 bg-clip-text text-transparent;
+  }
+  .shimmer {
+    background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.05) 50%, transparent 100%);
+    background-size: 200% 100%;
+    @apply animate-shimmer;
+  }
+}
+
+@layer utilities {
+  .glow-brand {
+    box-shadow: 0 0 20px theme('colors.brand.500 / 0.4'), 0 0 60px theme('colors.brand.500 / 0.15');
+  }
+  .glow-sm {
+    box-shadow: 0 0 8px theme('colors.brand.400 / 0.5');
+  }
+  .text-balance {
+    text-wrap: balance;
+  }
+  .canvas-checkerboard {
+    background-image:
+      linear-gradient(45deg, #1a1a1a 25%, transparent 25%),
+      linear-gradient(-45deg, #1a1a1a 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, #1a1a1a 75%),
+      linear-gradient(-45deg, transparent 75%, #1a1a1a 75%);
+    background-size: 20px 20px;
+    background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+  }
+}
