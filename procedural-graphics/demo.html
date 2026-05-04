@@ -1,0 +1,866 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Procedural — Live Demo</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #060608; --surface: #12131c; --border: rgba(255,255,255,0.08);
+    --brand: #3d64fb; --brand-light: #6088ff; --text: rgba(255,255,255,0.85);
+    --text-dim: rgba(255,255,255,0.4);
+  }
+  html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(--text); font-family: system-ui, sans-serif; }
+  #app { display: flex; flex-direction: column; height: 100dvh; }
+
+  /* Canvas */
+  #canvas-wrap { flex: 1; position: relative; overflow: hidden; }
+  canvas { width: 100%; height: 100%; display: block; background: #000; }
+  #fps { position: absolute; top: 8px; right: 10px; font-size: 11px; font-family: monospace; color: rgba(255,255,255,0.25); }
+  #algo-name { position: absolute; top: 8px; left: 10px; font-size: 11px; color: rgba(255,255,255,0.3); text-transform: capitalize; letter-spacing: 0.05em; }
+
+  /* Sidebar / drawer */
+  #panel {
+    background: var(--surface); border-top: 1px solid var(--border);
+    padding: 12px 14px 20px; overflow-y: auto;
+    max-height: 55dvh;
+  }
+
+  /* Prompt */
+  #prompt-row { display: flex; gap: 8px; margin-bottom: 12px; }
+  #prompt-input {
+    flex: 1; padding: 10px 14px; background: #1a1b28; border: 1px solid var(--border);
+    border-radius: 12px; color: #fff; font-size: 14px; outline: none;
+    transition: border-color .2s;
+  }
+  #prompt-input:focus { border-color: var(--brand); }
+  #prompt-btn {
+    padding: 10px 16px; border-radius: 12px; background: var(--brand);
+    color: #fff; font-size: 14px; font-weight: 600; border: none; cursor: pointer;
+    transition: background .15s;
+  }
+  #prompt-btn:hover { background: var(--brand-light); }
+
+  /* Tabs */
+  .tabs { display: flex; gap: 4px; margin-bottom: 10px; }
+  .tab {
+    flex: 1; padding: 7px 4px; border-radius: 10px; font-size: 12px; font-weight: 500;
+    text-align: center; border: 1px solid transparent; cursor: pointer; transition: all .15s;
+    color: var(--text-dim); background: transparent;
+  }
+  .tab.active { background: rgba(61,100,251,.2); border-color: rgba(61,100,251,.4); color: #8faeff; }
+
+  /* Algorithm grid */
+  #algo-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .algo-btn {
+    display: flex; align-items: center; gap: 8px; padding: 9px 10px;
+    border-radius: 12px; border: 1px solid transparent; cursor: pointer;
+    font-size: 12px; font-weight: 500; background: transparent;
+    color: var(--text-dim); transition: all .15s; text-align: left;
+  }
+  .algo-btn:hover { color: var(--text); background: rgba(255,255,255,.04); }
+  .algo-btn.active { background: rgba(61,100,251,.2); border-color: rgba(61,100,251,.4); color: #8faeff; }
+
+  /* Params */
+  #params-panel { display: flex; flex-direction: column; gap: 14px; }
+  .param-row label { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-dim); margin-bottom: 6px; }
+  .param-row label span { font-family: monospace; }
+  .param-row input[type=range] { width: 100%; accent-color: var(--brand); cursor: pointer; }
+
+  /* Palettes */
+  #palette-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
+  .pal-btn {
+    border-radius: 10px; border: 1px solid transparent; cursor: pointer;
+    padding: 6px 8px; background: rgba(255,255,255,.03); transition: all .15s;
+  }
+  .pal-btn.active { border-color: rgba(61,100,251,.5); background: rgba(61,100,251,.1); }
+  .pal-btn .swatches { display: flex; gap: 2px; height: 10px; border-radius: 4px; overflow: hidden; margin-bottom: 4px; }
+  .pal-btn .swatches div { flex: 1; }
+  .pal-btn span { font-size: 10px; color: var(--text-dim); }
+
+  /* Prompt suggestions */
+  #suggestions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .suggestion {
+    padding: 5px 10px; border-radius: 20px; border: 1px solid var(--border);
+    font-size: 11px; color: var(--text-dim); cursor: pointer; background: transparent;
+    transition: all .15s;
+  }
+  .suggestion:hover { border-color: var(--brand-light); color: #8faeff; background: rgba(61,100,251,.08); }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="canvas-wrap">
+    <canvas id="c"></canvas>
+    <span id="algo-name"></span>
+    <span id="fps"></span>
+  </div>
+  <div id="panel">
+    <!-- Prompt -->
+    <div id="prompt-row">
+      <input id="prompt-input" type="text" placeholder="Try: flowing aurora, sacred geometry, cosmic nebula…" autocomplete="off" />
+      <button id="prompt-btn" onclick="applyPrompt()">→</button>
+    </div>
+    <div id="suggestions">
+      <button class="suggestion" onclick="quickPrompt('flowing aurora worship')">🌌 Aurora worship</button>
+      <button class="suggestion" onclick="quickPrompt('sacred geometry mandala')">✨ Sacred geometry</button>
+      <button class="suggestion" onclick="quickPrompt('cosmic fire energy')">🔥 Cosmic fire</button>
+      <button class="suggestion" onclick="quickPrompt('ice crystal snowflake')">❄️ Ice crystal</button>
+      <button class="suggestion" onclick="quickPrompt('fluid ink water flow')">🌊 Fluid ink</button>
+      <button class="suggestion" onclick="quickPrompt('boids flocking birds')">🐦 Flocking birds</button>
+      <button class="suggestion" onclick="quickPrompt('particle vortex magic')">💫 Particle vortex</button>
+      <button class="suggestion" onclick="quickPrompt('neon plasma psychedelic')">🌈 Plasma</button>
+    </div>
+
+    <!-- Tabs -->
+    <div class="tabs" style="margin-top:14px">
+      <button class="tab active" onclick="switchTab('algo')">Algorithm</button>
+      <button class="tab" onclick="switchTab('params')">Params</button>
+      <button class="tab" onclick="switchTab('palette')">Palette</button>
+    </div>
+
+    <!-- Algorithm tab -->
+    <div id="tab-algo">
+      <div id="algo-grid"></div>
+    </div>
+
+    <!-- Params tab -->
+    <div id="tab-params" style="display:none">
+      <div id="params-panel">
+        <div class="param-row">
+          <label>Speed <span id="speed-val">1.0</span></label>
+          <input type="range" id="p-speed" min="0.1" max="5" step="0.1" value="1" oninput="updateParam('speed',+this.value,'speed-val',1)">
+        </div>
+        <div class="param-row">
+          <label>Complexity <span id="complexity-val">4</span></label>
+          <input type="range" id="p-complexity" min="1" max="8" step="1" value="4" oninput="updateParam('complexity',+this.value,'complexity-val',0)">
+        </div>
+        <div class="param-row">
+          <label>Intensity <span id="intensity-val">0.7</span></label>
+          <input type="range" id="p-intensity" min="0.1" max="1" step="0.05" value="0.7" oninput="updateParam('intensity',+this.value,'intensity-val',2)">
+        </div>
+        <div class="param-row">
+          <label>Scale <span id="scale-val">50</span></label>
+          <input type="range" id="p-scale" min="10" max="200" step="5" value="50" oninput="updateParam('scale',+this.value,'scale-val',0)">
+        </div>
+      </div>
+    </div>
+
+    <!-- Palette tab -->
+    <div id="tab-palette" style="display:none">
+      <div id="palette-grid"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ─── State ────────────────────────────────────────────────────────────────────
+const state = {
+  algo: 'aurora',
+  params: { speed: 1, complexity: 4, intensity: 0.7, scale: 50 },
+  palette: ['#000814','#001f3f','#0d4f3c','#00916e','#61d095','#c8f5d1'],
+  frame: 0,
+  time: 0,
+  algoState: null,
+  running: true,
+};
+let rafId = null;
+
+// ─── Palettes ─────────────────────────────────────────────────────────────────
+const PALETTES = [
+  { id:'aurora',    name:'Aurora',         colors:['#000814','#001f3f','#0d4f3c','#00916e','#61d095','#c8f5d1'] },
+  { id:'worship',   name:'Worship Gold',   colors:['#0a0014','#180038','#4a0080','#9900cc','#cc44ff','#ffd700'] },
+  { id:'fire',      name:'Cosmic Fire',    colors:['#000000','#1a0000','#8b0000','#ff4500','#ff8c00','#ffd700'] },
+  { id:'ocean',     name:'Deep Ocean',     colors:['#000033','#003366','#006699','#0099cc','#33ccff','#99eeff'] },
+  { id:'plasma',    name:'Electric Plasma',colors:['#0d0221','#261447','#5c2d91','#c4007b','#ff0062','#ffd700'] },
+  { id:'nebula',    name:'Nebula Dream',   colors:['#0a0014','#240046','#5a0073','#bc00dd','#0057ff','#0ee6f1'] },
+  { id:'crystal',   name:'Ice Crystal',    colors:['#001133','#003388','#0066dd','#55aaff','#aaddff','#ffffff'] },
+  { id:'sunrise',   name:'Golden Sunrise', colors:['#0d1b2a','#7b2d8b','#e05c5c','#f4a261','#e9c46a','#ffffff'] },
+  { id:'glass',     name:'Stained Glass',  colors:['#1a0033','#330066','#cc0044','#ff6600','#ffcc00','#0044cc'] },
+  { id:'mono',      name:'Dark Mono',      colors:['#000000','#111111','#333333','#666666','#999999','#ffffff'] },
+  { id:'holy',      name:'Holy Spirit',    colors:['#000819','#001a4d','#003399','#0055ff','#ffffff','#ffd700'] },
+  { id:'forest',    name:'Forest Life',    colors:['#0a1628','#1a3a2a','#2d6a4f','#52b788','#95d5b2','#d8f3dc'] },
+];
+
+// ─── Algorithm definitions ────────────────────────────────────────────────────
+const ALGOS = [
+  { id:'aurora',    name:'Aurora Borealis', emoji:'🌌' },
+  { id:'fluid',     name:'Fluid Dynamics',  emoji:'🌊' },
+  { id:'plasma',    name:'Plasma',          emoji:'🌈' },
+  { id:'particles', name:'Particles',       emoji:'✨' },
+  { id:'symmetry',  name:'Kaleidoscope',    emoji:'🪆' },
+  { id:'noise',     name:'Flow Field',      emoji:'🌬️' },
+  { id:'mandelbrot',name:'Mandelbrot',      emoji:'🔭' },
+  { id:'voronoi',   name:'Voronoi',         emoji:'🪟' },
+  { id:'boids',     name:'Boids Flock',     emoji:'🐦' },
+  { id:'waves',     name:'Wave Interference',emoji:'〰️' },
+  { id:'dla',       name:'DLA Crystal',     emoji:'❄️' },
+  { id:'gravity',   name:'N-Body Gravity',  emoji:'🪐' },
+];
+
+// ─── Canvas setup ─────────────────────────────────────────────────────────────
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d', { willReadFrequently: true });
+
+function resize() {
+  const wrap = document.getElementById('canvas-wrap');
+  canvas.width = wrap.clientWidth * devicePixelRatio | 0;
+  canvas.height = wrap.clientHeight * devicePixelRatio | 0;
+  canvas.style.width = wrap.clientWidth + 'px';
+  canvas.style.height = wrap.clientHeight + 'px';
+  initAlgo();
+}
+window.addEventListener('resize', resize);
+
+// ─── Perlin noise (self-contained) ───────────────────────────────────────────
+const perm = new Uint8Array(512);
+(function buildPerm() {
+  const p = Array.from({length:256}, (_,i) => i);
+  for (let i=255;i>0;i--) { const j=Math.random()*i|0; [p[i],p[j]]=[p[j],p[i]]; }
+  for (let i=0;i<512;i++) perm[i]=p[i&255];
+})();
+function fade(t){return t*t*t*(t*(t*6-15)+10);}
+function lerp(t,a,b){return a+t*(b-a);}
+function grad(h,x,y){const u=h<2?x:y,v=h<2?y:x;return((h&1)?-u:u)+((h&2)?-v:v);}
+function perlin(x,y){
+  const X=Math.floor(x)&255,Y=Math.floor(y)&255;
+  x-=Math.floor(x); y-=Math.floor(y);
+  const u=fade(x),v=fade(y);
+  const a=perm[X]+Y,b=perm[X+1]+Y;
+  return lerp(v,lerp(u,grad(perm[a],x,y),grad(perm[b],x-1,y)),
+                lerp(u,grad(perm[a+1],x,y-1),grad(perm[b+1],x-1,y-1)));
+}
+function fbm(x,y,oct=4){let v=0,a=1,f=1,m=0;for(let i=0;i<oct;i++){v+=perlin(x*f,y*f)*a;m+=a;a*=0.5;f*=2;}return v/m;}
+
+// ─── Color utilities ──────────────────────────────────────────────────────────
+function hsl2rgb(h,s,l){
+  h=((h%360)+360)%360; s/=100; l/=100;
+  const c=(1-Math.abs(2*l-1))*s, x=c*(1-Math.abs((h/60)%2-1)), m=l-c/2;
+  let r=0,g=0,b=0;
+  if(h<60){r=c;g=x;}else if(h<120){r=x;g=c;}else if(h<180){g=c;b=x;}
+  else if(h<240){g=x;b=c;}else if(h<300){r=x;b=c;}else{r=c;b=x;}
+  return[(r+m)*255|0,(g+m)*255|0,(b+m)*255|0];
+}
+function hex2rgb(h){const n=parseInt(h.slice(1),16);return[(n>>16)&255,(n>>8)&255,n&255];}
+function samplePal(t){
+  const pal=state.palette; t=Math.max(0,Math.min(1,t));
+  const idx=t*(pal.length-1), lo=idx|0, hi=Math.min(lo+1,pal.length-1), f=idx-lo;
+  const a=hex2rgb(pal[lo]),b=hex2rgb(pal[hi]);
+  return[a[0]+(b[0]-a[0])*f|0, a[1]+(b[1]-a[1])*f|0, a[2]+(b[2]-a[2])*f|0];
+}
+
+// ─── Algorithm implementations ────────────────────────────────────────────────
+
+// AURORA
+function initAurora(){
+  const bands=[];
+  const n = 6 + (state.params.complexity|0);
+  for(let i=0;i<n;i++) bands.push({
+    phase: Math.random()*100, speed:(0.1+Math.random()*0.4)*(state.params.speed||1),
+    y: 0.2+Math.random()*0.5, amplitude:20+Math.random()*60,
+    hue: state.palette[i%state.palette.length]
+  });
+  const stars=Array.from({length:150},()=>({x:Math.random(),y:Math.random()*0.4,b:Math.random()}));
+  return {bands, stars, trail: ctx.createImageData(canvas.width,canvas.height)};
+}
+function renderAurora(s,t){
+  const W=canvas.width,H=canvas.height,intensity=state.params.intensity||0.7;
+  ctx.fillStyle=`rgba(0,0,0,${0.06+intensity*0.04})`;
+  ctx.fillRect(0,0,W,H);
+  // Stars
+  ctx.fillStyle='rgba(255,255,255,0.6)';
+  for(const st of s.stars){
+    const twinkle=0.3+0.7*((Math.sin(t*0.001*2+st.b*100)+1)/2);
+    ctx.globalAlpha=twinkle*st.b*0.7;
+    ctx.fillRect(st.x*W|0,st.y*H|0,1,1);
+  }
+  ctx.globalAlpha=1;
+  for(const band of s.bands){
+    const speed=state.params.speed||1;
+    band.phase+=0.002*speed;
+    const np=12;
+    ctx.beginPath();
+    const bh=band.y*H;
+    const amp=band.amplitude*(state.params.intensity||0.7);
+    for(let i=0;i<=W;i+=4){
+      const nx=i/W*3+band.phase;
+      const ny=bh/H*2;
+      const wave=fbm(nx,ny,3)*amp;
+      const y=bh+wave;
+      i===0?ctx.moveTo(i,y):ctx.lineTo(i,y);
+    }
+    ctx.lineTo(W,H); ctx.lineTo(0,H); ctx.closePath();
+    const col=hex2rgb(band.hue);
+    const grad=ctx.createLinearGradient(0,bh-amp,0,bh+amp+80);
+    grad.addColorStop(0,`rgba(${col[0]},${col[1]},${col[2]},0)`);
+    grad.addColorStop(0.5,`rgba(${col[0]},${col[1]},${col[2]},${0.12+intensity*0.15})`);
+    grad.addColorStop(1,`rgba(${col[0]},${col[1]},${col[2]},0)`);
+    ctx.fillStyle=grad;
+    ctx.globalCompositeOperation='screen';
+    ctx.fill();
+    ctx.globalCompositeOperation='source-over';
+  }
+}
+
+// PLASMA
+function initPlasma(){return{};}
+function renderPlasma(s,t){
+  const W=canvas.width,H=canvas.height;
+  const speed=state.params.speed||1;
+  const scale=state.params.scale||50;
+  const tt=t*0.001*speed;
+  const img=ctx.createImageData(W,H);
+  const d=img.data;
+  const cx=W/2,cy=H/2;
+  const nw=Math.max(2,state.params.complexity|0);
+  for(let y=0;y<H;y++){
+    for(let x=0;x<W;x++){
+      const nx=x/scale,ny=y/scale;
+      let v=0;
+      if(nw>=1) v+=Math.sin(nx+tt);
+      if(nw>=2) v+=Math.sin(ny+tt*0.7);
+      if(nw>=3) v+=Math.sin((nx+ny)*0.7+tt*1.3);
+      if(nw>=4){const dx=(x-cx)/scale,dy=(y-cy)/scale;v+=Math.sin(Math.sqrt(dx*dx+dy*dy)*2+tt);}
+      if(nw>=5) v+=Math.sin(nx*1.5-ny*0.5+tt*0.5);
+      if(nw>=6) v+=Math.sin((nx-ny)*0.8+tt*1.1);
+      v/=nw;
+      const [r,g,b]=samplePal((v+1)/2);
+      const i=(y*W+x)*4;
+      d[i]=r;d[i+1]=g;d[i+2]=b;d[i+3]=255;
+    }
+  }
+  ctx.putImageData(img,0,0);
+}
+
+// FLUID (Navier-Stokes simplified for performance)
+const FLUID_N=96;
+function initFluid(){
+  const n2=(FLUID_N+2)*(FLUID_N+2);
+  return{vx:new Float32Array(n2),vy:new Float32Array(n2),
+         vx0:new Float32Array(n2),vy0:new Float32Array(n2),
+         d:new Float32Array(n2),d0:new Float32Array(n2)};
+}
+function fluidIX(x,y){return x+(FLUID_N+2)*y;}
+function fluidSet(b,x,N){
+  for(let i=1;i<=N;i++){
+    x[fluidIX(0,i)]=b===1?-x[fluidIX(1,i)]:x[fluidIX(1,i)];
+    x[fluidIX(N+1,i)]=b===1?-x[fluidIX(N,i)]:x[fluidIX(N,i)];
+    x[fluidIX(i,0)]=b===2?-x[fluidIX(i,1)]:x[fluidIX(i,1)];
+    x[fluidIX(i,N+1)]=b===2?-x[fluidIX(i,N)]:x[fluidIX(i,N)];
+  }
+  x[fluidIX(0,0)]=0.5*(x[fluidIX(1,0)]+x[fluidIX(0,1)]);
+  x[fluidIX(0,N+1)]=0.5*(x[fluidIX(1,N+1)]+x[fluidIX(0,N)]);
+  x[fluidIX(N+1,0)]=0.5*(x[fluidIX(N,0)]+x[fluidIX(N+1,1)]);
+  x[fluidIX(N+1,N+1)]=0.5*(x[fluidIX(N,N+1)]+x[fluidIX(N+1,N)]);
+}
+function fluidDiff(b,x,x0,diff,dt,N){
+  const a=dt*diff*N*N;
+  for(let k=0;k<6;k++){
+    for(let j=1;j<=N;j++) for(let i=1;i<=N;i++)
+      x[fluidIX(i,j)]=(x0[fluidIX(i,j)]+a*(x[fluidIX(i-1,j)]+x[fluidIX(i+1,j)]+x[fluidIX(i,j-1)]+x[fluidIX(i,j+1)]))/(1+4*a);
+    fluidSet(b,x,N);
+  }
+}
+function fluidAdvect(b,d,d0,u,v,dt,N){
+  const dt0=dt*N;
+  for(let j=1;j<=N;j++){
+    for(let i=1;i<=N;i++){
+      let x=i-dt0*u[fluidIX(i,j)],y=j-dt0*v[fluidIX(i,j)];
+      x=Math.max(0.5,Math.min(N+0.5,x));y=Math.max(0.5,Math.min(N+0.5,y));
+      const i0=x|0,i1=i0+1,j0=y|0,j1=j0+1;
+      const s1=x-i0,s0=1-s1,t1=y-j0,t0=1-t1;
+      d[fluidIX(i,j)]=s0*(t0*d0[fluidIX(i0,j0)]+t1*d0[fluidIX(i0,j1)])+s1*(t0*d0[fluidIX(i1,j0)]+t1*d0[fluidIX(i1,j1)]);
+    }
+  }
+  fluidSet(b,d,N);
+}
+function fluidProject(u,v,p,div,N){
+  const h=1/N;
+  for(let j=1;j<=N;j++) for(let i=1;i<=N;i++){
+    div[fluidIX(i,j)]=-0.5*h*(u[fluidIX(i+1,j)]-u[fluidIX(i-1,j)]+v[fluidIX(i,j+1)]-v[fluidIX(i,j-1)]);
+    p[fluidIX(i,j)]=0;
+  }
+  fluidSet(0,div,N); fluidSet(0,p,N);
+  for(let k=0;k<6;k++){
+    for(let j=1;j<=N;j++) for(let i=1;i<=N;i++)
+      p[fluidIX(i,j)]=(div[fluidIX(i,j)]+p[fluidIX(i-1,j)]+p[fluidIX(i+1,j)]+p[fluidIX(i,j-1)]+p[fluidIX(i,j+1)])/4;
+    fluidSet(0,p,N);
+  }
+  for(let j=1;j<=N;j++) for(let i=1;i<=N;i++){
+    u[fluidIX(i,j)]-=0.5*(p[fluidIX(i+1,j)]-p[fluidIX(i-1,j)])/h;
+    v[fluidIX(i,j)]-=0.5*(p[fluidIX(i,j+1)]-p[fluidIX(i,j-1)])/h;
+  }
+  fluidSet(1,u,N); fluidSet(2,v,N);
+}
+function renderFluid(s,t){
+  const N=FLUID_N,dt=0.12,visc=0.00001,diff=0.00001;
+  const sp=state.params.speed||1;
+  // Add sources
+  const cx=(N/2)|0, cy=(N/2)|0;
+  const angle=t*0.001*sp;
+  const sx=(cx+Math.cos(angle)*N*0.25)|0, sy=(cy+Math.sin(angle)*N*0.25)|0;
+  if(sx>0&&sx<N&&sy>0&&sy<N){
+    s.d[fluidIX(sx,sy)]+=15*sp;
+    s.vx[fluidIX(sx,sy)]+=Math.cos(angle+Math.PI/2)*4*sp;
+    s.vy[fluidIX(sx,sy)]+=Math.sin(angle+Math.PI/2)*4*sp;
+  }
+  // Step
+  fluidDiff(1,s.vx,s.vx0,visc,dt,N);fluidDiff(2,s.vy,s.vy0,visc,dt,N);
+  fluidProject(s.vx,s.vy,s.vx0,s.vy0,N);
+  s.vx0.set(s.vx);s.vy0.set(s.vy);
+  fluidAdvect(1,s.vx,s.vx0,s.vx0,s.vy0,dt,N);fluidAdvect(2,s.vy,s.vy0,s.vx0,s.vy0,dt,N);
+  fluidProject(s.vx,s.vy,s.vx0,s.vy0,N);
+  s.d0.set(s.d);fluidDiff(0,s.d,s.d0,diff,dt,N);
+  s.d0.set(s.d);fluidAdvect(0,s.d,s.d0,s.vx,s.vy,dt,N);
+  for(let i=0;i<s.d.length;i++) s.d[i]*=0.992;
+  // Render
+  const W=canvas.width,H=canvas.height;
+  const img=ctx.createImageData(W,H);
+  const d=img.data;
+  const sc=W/N;
+  for(let j=1;j<=N;j++){
+    for(let i=1;i<=N;i++){
+      const v=Math.min(1,s.d[fluidIX(i,j)]/8);
+      if(v<0.005) continue;
+      const [r,g,b]=samplePal(v);
+      const px=(i*sc)|0,py=(j*sc)|0,pw=(sc+1)|0,ph=(sc+1)|0;
+      for(let dy=0;dy<ph;dy++) for(let dx=0;dx<pw;dx++){
+        const ix=((py+dy)*W+(px+dx))*4;
+        if(ix<0||ix+3>=d.length) continue;
+        d[ix]=r;d[ix+1]=g;d[ix+2]=b;d[ix+3]=Math.min(255,v*255)|0;
+      }
+    }
+  }
+  ctx.fillStyle='rgba(0,0,0,0.15)';ctx.fillRect(0,0,W,H);
+  ctx.putImageData(img,0,0);
+}
+
+// PARTICLES
+function initParticles(){
+  const count=Math.min(2000,(state.params.complexity||4)*300|0);
+  const W=canvas.width,H=canvas.height;
+  return {
+    px:new Float32Array(count).map(()=>Math.random()*W),
+    py:new Float32Array(count).map(()=>Math.random()*H),
+    vx:new Float32Array(count),vy:new Float32Array(count),
+    age:new Float32Array(count).map(()=>Math.random()),
+    count
+  };
+}
+function renderParticles(s,t){
+  const W=canvas.width,H=canvas.height,intensity=state.params.intensity||0.7,sp=state.params.speed||1;
+  ctx.fillStyle=`rgba(0,0,0,${0.05+intensity*0.05})`;
+  ctx.fillRect(0,0,W,H);
+  const cx=W/2,cy=H/2,sc=state.params.scale||50;
+  for(let i=0;i<s.count;i++){
+    let x=s.px[i],y=s.py[i];
+    const dx=x-cx,dy=y-cy,r=Math.sqrt(dx*dx+dy*dy)+1;
+    const angle=Math.atan2(dy,dx)+0.02*sp+(fbm(x/sc/2,y/sc/2,2)*2-1)*0.3;
+    s.vx[i]+=(Math.cos(angle)*1.5-s.vx[i]*0.05)*sp*0.5;
+    s.vy[i]+=(Math.sin(angle)*1.5-s.vy[i]*0.05)*sp*0.5;
+    s.px[i]=(x+s.vx[i]+W)%W; s.py[i]=(y+s.vy[i]+H)%H;
+    s.age[i]=(s.age[i]+0.002)%1;
+    const col=samplePal(s.age[i]);
+    const spd=Math.sqrt(s.vx[i]*s.vx[i]+s.vy[i]*s.vy[i]);
+    ctx.fillStyle=`rgba(${col[0]},${col[1]},${col[2]},${Math.min(0.9,spd*0.3)*intensity})`;
+    ctx.fillRect(s.px[i]|0,s.py[i]|0,1+(spd*0.2|0),1);
+  }
+}
+
+// SYMMETRY / KALEIDOSCOPE
+function initSymmetry(){return {off:null,angle:0};}
+function renderSymmetry(s,t){
+  const W=canvas.width,H=canvas.height,sp=state.params.speed||1;
+  const folds=2+((state.params.complexity||4)|0);
+  s.angle+=0.003*sp;
+  ctx.fillStyle='rgba(0,0,0,0.03)';ctx.fillRect(0,0,W,H);
+  const cx=W/2,cy=H/2;
+  const tt=t*0.0005*sp;
+  ctx.save();ctx.translate(cx,cy);
+  for(let f=0;f<folds;f++){
+    ctx.save();
+    ctx.rotate((2*Math.PI/folds)*f+s.angle);
+    if(f%2===0) ctx.scale(1,-1);
+    // Draw slice
+    const len=Math.min(W,H)*0.55;
+    for(let i=0;i<18;i++){
+      const phase=i/18*Math.PI*2+tt;
+      const r=len*(0.2+0.8*((i+1)/18));
+      const nx=Math.cos(phase)*r/100,ny=Math.sin(phase)*r/100;
+      const col=samplePal((Math.sin(tt+i*0.7)+1)/2);
+      ctx.strokeStyle=`rgba(${col[0]},${col[1]},${col[2]},0.15)`;
+      ctx.lineWidth=1.5;
+      ctx.beginPath();
+      ctx.moveTo(0,0);ctx.lineTo(Math.cos(phase)*r,Math.sin(phase)*r);ctx.stroke();
+      ctx.fillStyle=`rgba(${col[0]},${col[1]},${col[2]},0.4)`;
+      ctx.beginPath();ctx.arc(Math.cos(phase+0.2)*r*0.5,Math.sin(phase+0.2)*r*0.5,2,0,Math.PI*2);ctx.fill();
+    }
+    ctx.restore();
+  }
+  ctx.restore();
+}
+
+// MANDELBROT
+function initMandelbrot(){
+  const W=canvas.width,H=canvas.height;
+  const img=ctx.createImageData(W,H);
+  const maxIter=128+((state.params.complexity||4)-1)*32;
+  for(let y=0;y<H;y++){
+    for(let x=0;x<W;x++){
+      const cr=(x/W*3.5-2.5),ci=(y/H*2-1);
+      let zr=0,zi=0,it=0;
+      while(zr*zr+zi*zi<4&&it<maxIter){const tmp=zr*zr-zi*zi+cr;zi=2*zr*zi+ci;zr=tmp;it++;}
+      const idx=(y*W+x)*4;
+      if(it===maxIter){img.data[idx+3]=255;}
+      else{
+        const smooth=it+1-Math.log(Math.log(zr*zr+zi*zi)/Math.log(4))/Math.log(2);
+        const [r,g,b]=samplePal(smooth/maxIter);
+        img.data[idx]=r;img.data[idx+1]=g;img.data[idx+2]=b;img.data[idx+3]=255;
+      }
+    }
+  }
+  return{img,computed:true};
+}
+function renderMandelbrot(s,t){
+  if(!s.computed) return;
+  ctx.putImageData(s.img,0,0);
+}
+
+// VORONOI
+function initVoronoi(){
+  const n=5+((state.params.complexity||4)|0)*3;
+  const W=canvas.width,H=canvas.height;
+  return{
+    pts:Array.from({length:n},(_,i)=>({
+      x:Math.random()*W,y:Math.random()*H,
+      vx:(Math.random()-0.5)*1.5,vy:(Math.random()-0.5)*1.5,
+      hue:i/n
+    }))
+  };
+}
+function renderVoronoi(s,t){
+  const W=canvas.width,H=canvas.height,sp=state.params.speed||1;
+  for(const p of s.pts){
+    p.x+=p.vx*sp;p.y+=p.vy*sp;
+    if(p.x<0||p.x>W)p.vx*=-1;if(p.y<0||p.y>H)p.vy*=-1;
+  }
+  const img=ctx.createImageData(W,H);const d=img.data;
+  for(let y=0;y<H;y+=2){
+    for(let x=0;x<W;x+=2){
+      let minD=Infinity,minI=0,secD=Infinity;
+      for(let i=0;i<s.pts.length;i++){
+        const dx=x-s.pts[i].x,dy=y-s.pts[i].y,dist=dx*dx+dy*dy;
+        if(dist<minD){secD=minD;minD=dist;minI=i;}else if(dist<secD)secD=dist;
+      }
+      const border=Math.sqrt(secD)-Math.sqrt(minD)<2;
+      const [r,g,b]=border?[20,20,20]:samplePal(s.pts[minI].hue);
+      for(let dy2=0;dy2<2;dy2++) for(let dx2=0;dx2<2;dx2++){
+        const i=((y+dy2)*W+(x+dx2))*4;
+        d[i]=r;d[i+1]=g;d[i+2]=b;d[i+3]=255;
+      }
+    }
+  }
+  ctx.putImageData(img,0,0);
+}
+
+// BOIDS
+function initBoids(){
+  const n=30+((state.params.complexity||4)|0)*20;
+  const W=canvas.width,H=canvas.height;
+  return{
+    x:new Float32Array(n).map(()=>Math.random()*W),
+    y:new Float32Array(n).map(()=>Math.random()*H),
+    vx:new Float32Array(n).map(()=>(Math.random()-0.5)*3),
+    vy:new Float32Array(n).map(()=>(Math.random()-0.5)*3),
+    n
+  };
+}
+function renderBoids(s,t){
+  const W=canvas.width,H=canvas.height,sp=state.params.speed||1;
+  ctx.fillStyle='rgba(0,0,0,0.15)';ctx.fillRect(0,0,W,H);
+  const SR=25,AR=50,CR=75,maxSp=4*sp;
+  for(let i=0;i<s.n;i++){
+    let ax=0,ay=0,cx2=0,cy2=0,ca=0,sx=0,sy=0,sa=0,na=0;
+    for(let j=0;j<s.n;j++){
+      if(i===j) continue;
+      const dx=s.x[j]-s.x[i],dy=s.y[j]-s.y[i],d=Math.sqrt(dx*dx+dy*dy);
+      if(d<SR){sx-=dx;sy-=dy;sa++;}
+      else if(d<AR){ax+=s.vx[j];ay+=s.vy[j];na++;}
+      else if(d<CR){cx2+=s.x[j];cy2+=s.y[j];ca++;}
+    }
+    if(sa>0){s.vx[i]+=sx/sa*0.08;s.vy[i]+=sy/sa*0.08;}
+    if(na>0){s.vx[i]+=(ax/na-s.vx[i])*0.04;}
+    if(ca>0){s.vx[i]+=(cx2/ca-s.x[i])*0.0008;s.vy[i]+=(cy2/ca-s.y[i])*0.0008;}
+    // Wall avoidance
+    if(s.x[i]<40)s.vx[i]+=0.5;if(s.x[i]>W-40)s.vx[i]-=0.5;
+    if(s.y[i]<40)s.vy[i]+=0.5;if(s.y[i]>H-40)s.vy[i]-=0.5;
+    const spd=Math.sqrt(s.vx[i]*s.vx[i]+s.vy[i]*s.vy[i]);
+    if(spd>maxSp){s.vx[i]=s.vx[i]/spd*maxSp;s.vy[i]=s.vy[i]/spd*maxSp;}
+    s.x[i]+=s.vx[i];s.y[i]+=s.vy[i];
+    s.x[i]=(s.x[i]+W)%W;s.y[i]=(s.y[i]+H)%H;
+    const angle=Math.atan2(s.vy[i],s.vx[i]);
+    const col=samplePal(i/s.n);
+    ctx.fillStyle=`rgb(${col[0]},${col[1]},${col[2]})`;
+    ctx.save();ctx.translate(s.x[i],s.y[i]);ctx.rotate(angle);
+    ctx.beginPath();ctx.moveTo(6,0);ctx.lineTo(-4,-3);ctx.lineTo(-4,3);ctx.closePath();ctx.fill();
+    ctx.restore();
+  }
+}
+
+// WAVES
+function initWaves(){return{};}
+function renderWaves(s,t){
+  const W=canvas.width,H=canvas.height,sp=state.params.speed||1;
+  const n=2+((state.params.complexity||4)|0);
+  const tt=t*0.001*sp;
+  const srcs=Array.from({length:n},(_,i)=>{
+    const a=(i/n)*Math.PI*2+tt*0.2;
+    return{x:W/2+Math.cos(a)*W*0.25,y:H/2+Math.sin(a)*H*0.25};
+  });
+  const img=ctx.createImageData(W,H);const d=img.data;
+  for(let y=0;y<H;y+=2){
+    for(let x=0;x<W;x+=2){
+      let v=0;
+      for(const src of srcs){
+        const dx=x-src.x,dy=y-src.y,r=Math.sqrt(dx*dx+dy*dy);
+        v+=Math.sin(r*0.05-tt*4);
+      }
+      v/=srcs.length;
+      const [r,g,b]=samplePal((v+1)/2);
+      for(let dy2=0;dy2<2;dy2++) for(let dx2=0;dx2<2;dx2++){
+        const i=((y+dy2)*W+(x+dx2))*4;
+        d[i]=r;d[i+1]=g;d[i+2]=b;d[i+3]=255;
+      }
+    }
+  }
+  ctx.putImageData(img,0,0);
+}
+
+// NOISE / Flow field
+function initNoise(){
+  const count=Math.min(3000,((state.params.complexity||4)|0)*400);
+  const W=canvas.width,H=canvas.height;
+  return{
+    x:new Float32Array(count).map(()=>Math.random()*W),
+    y:new Float32Array(count).map(()=>Math.random()*H),
+    age:new Float32Array(count).map(()=>Math.random()),count
+  };
+}
+function renderNoise(s,t){
+  const W=canvas.width,H=canvas.height,sp=state.params.speed||1;
+  const sc=(state.params.scale||50)/5000;
+  ctx.fillStyle=`rgba(0,0,0,${0.03+(1-state.params.intensity||0.3)*0.02})`;
+  ctx.fillRect(0,0,W,H);
+  for(let i=0;i<s.count;i++){
+    const angle=(perlin(s.x[i]*sc,s.y[i]*sc)+perlin(s.x[i]*sc*0.5+100,s.y[i]*sc*0.5+50)*0.5)*Math.PI*4;
+    s.x[i]+=Math.cos(angle)*2*sp;s.y[i]+=Math.sin(angle)*2*sp;
+    s.age[i]=(s.age[i]+0.002)%1;
+    if(s.x[i]<0||s.x[i]>W||s.y[i]<0||s.y[i]>H){s.x[i]=Math.random()*W;s.y[i]=Math.random()*H;}
+    const col=samplePal(s.age[i]);
+    ctx.fillStyle=`rgba(${col[0]},${col[1]},${col[2]},0.5)`;
+    ctx.fillRect(s.x[i]|0,s.y[i]|0,1.5,1.5);
+  }
+}
+
+// DLA
+function initDLA(){
+  const W=canvas.width,H=canvas.height;
+  const pts=[{x:W/2|0,y:H/2|0,age:0}];
+  const grid=new Set([`${W/2|0},${H/2|0}`]);
+  return{pts,grid,walkers:[
+    {x:Math.random()*W|0,y:Math.random()*H|0},
+    {x:Math.random()*W|0,y:Math.random()*H|0},
+  ],done:false,W,H};
+}
+function renderDLA(s,t){
+  const W=s.W,H=s.H,sp=(state.params.speed||1)|0;
+  ctx.fillStyle='rgba(0,0,0,0.01)';ctx.fillRect(0,0,W,H);
+  if(!s.done){
+    for(let step=0;step<sp*10;step++){
+      for(let wi=0;wi<s.walkers.length;wi++){
+        const w=s.walkers[wi];
+        w.x+=(Math.random()*3|0)-1;w.y+=(Math.random()*3|0)-1;
+        w.x=(w.x+W)%W;w.y=(w.y+H)%H;
+        const nbrs=[[0,1],[0,-1],[1,0],[-1,0]];
+        const stuck=nbrs.some(([dx,dy])=>s.grid.has(`${w.x+dx},${w.y+dy}`));
+        if(stuck){
+          s.pts.push({x:w.x,y:w.y,age:s.pts.length/5000});
+          s.grid.add(`${w.x},${w.y}`);
+          s.walkers[wi]={x:Math.random()*W|0,y:Math.random()*H|0};
+          if(s.pts.length>5000)s.done=true;
+        }
+      }
+    }
+  }
+  for(let i=Math.max(0,s.pts.length-500*sp);i<s.pts.length;i++){
+    const p=s.pts[i];
+    const col=samplePal(p.age);
+    ctx.fillStyle=`rgb(${col[0]},${col[1]},${col[2]})`;
+    ctx.fillRect(p.x,p.y,2,2);
+  }
+}
+
+// GRAVITY
+function initGravity(){
+  const W=canvas.width,H=canvas.height;
+  const n=3+((state.params.complexity||4)|0);
+  return{
+    bodies:Array.from({length:n},(_,i)=>({
+      x:W/2+(Math.random()-0.5)*W*0.5,
+      y:H/2+(Math.random()-0.5)*H*0.5,
+      vx:(Math.random()-0.5)*2,vy:(Math.random()-0.5)*2,
+      m:20+Math.random()*80,
+      trail:[],hue:i/n
+    }))
+  };
+}
+function renderGravity(s,t){
+  const W=canvas.width,H=canvas.height,G=2*(state.params.intensity||0.7)*3,sp=state.params.speed||1;
+  ctx.fillStyle='rgba(0,0,0,0.12)';ctx.fillRect(0,0,W,H);
+  for(const b of s.bodies){
+    let fx=0,fy=0;
+    for(const o of s.bodies){
+      if(b===o) continue;
+      const dx=o.x-b.x,dy=o.y-b.y,d2=dx*dx+dy*dy+100;
+      const f=G*b.m*o.m/d2;
+      fx+=f*dx/Math.sqrt(d2);fy+=f*dy/Math.sqrt(d2);
+    }
+    b.vx+=fx/b.m*sp;b.vy+=fy/b.m*sp;
+    b.x+=b.vx*sp;b.y+=b.vy*sp;
+    if(b.x<-100||b.x>W+100||b.y<-100||b.y>H+100){b.x=W/2;b.y=H/2;b.vx=(Math.random()-0.5)*3;b.vy=(Math.random()-0.5)*3;}
+    b.trail.push({x:b.x,y:b.y});
+    if(b.trail.length>200) b.trail.shift();
+    const col=samplePal(b.hue);
+    ctx.strokeStyle=`rgba(${col[0]},${col[1]},${col[2]},0.6)`;
+    ctx.lineWidth=1;ctx.beginPath();
+    for(let i=1;i<b.trail.length;i++){
+      i===1?ctx.moveTo(b.trail[i].x,b.trail[i].y):ctx.lineTo(b.trail[i].x,b.trail[i].y);
+    }
+    ctx.stroke();
+    ctx.fillStyle=`rgb(${col[0]},${col[1]},${col[2]})`;
+    ctx.beginPath();ctx.arc(b.x,b.y,Math.sqrt(b.m)*0.8,0,Math.PI*2);ctx.fill();
+  }
+}
+
+// ─── Algorithm dispatch ───────────────────────────────────────────────────────
+const ALGO_INIT = {
+  aurora:initAurora, fluid:initFluid, plasma:initPlasma, particles:initParticles,
+  symmetry:initSymmetry, noise:initNoise, mandelbrot:initMandelbrot, voronoi:initVoronoi,
+  boids:initBoids, waves:initWaves, dla:initDLA, gravity:initGravity,
+};
+const ALGO_RENDER = {
+  aurora:renderAurora, fluid:renderFluid, plasma:renderPlasma, particles:renderParticles,
+  symmetry:renderSymmetry, noise:renderNoise, mandelbrot:renderMandelbrot, voronoi:renderVoronoi,
+  boids:renderBoids, waves:renderWaves, dla:renderDLA, gravity:renderGravity,
+};
+
+function initAlgo(){
+  if(ALGO_INIT[state.algo]) state.algoState=ALGO_INIT[state.algo]();
+}
+
+// ─── Animation loop ───────────────────────────────────────────────────────────
+let lastFpsTime=0, frameCount=0;
+function loop(now){
+  rafId=requestAnimationFrame(loop);
+  state.time=now; state.frame++;
+  frameCount++;
+  if(now-lastFpsTime>1000){
+    document.getElementById('fps').textContent=(frameCount*1000/(now-lastFpsTime)|0)+' fps';
+    frameCount=0; lastFpsTime=now;
+  }
+  if(state.algoState && ALGO_RENDER[state.algo]) ALGO_RENDER[state.algo](state.algoState, now);
+}
+
+// ─── UI ───────────────────────────────────────────────────────────────────────
+function setAlgo(id){
+  state.algo=id;
+  initAlgo();
+  document.querySelectorAll('.algo-btn').forEach(b=>b.classList.toggle('active',b.dataset.id===id));
+  document.getElementById('algo-name').textContent=id.replace('_',' ');
+}
+
+function updateParam(key, val, labelId, decimals){
+  state.params[key]=val;
+  document.getElementById(labelId).textContent=val.toFixed(decimals);
+  if(key==='complexity') initAlgo();
+}
+
+let activeTab='algo';
+function switchTab(tab){
+  activeTab=tab;
+  document.querySelectorAll('.tab').forEach((t,i)=>{
+    const tabs=['algo','params','palette'];
+    t.classList.toggle('active',tabs[i]===tab);
+  });
+  document.getElementById('tab-algo').style.display=tab==='algo'?'':'none';
+  document.getElementById('tab-params').style.display=tab==='params'?'':'none';
+  document.getElementById('tab-palette').style.display=tab==='palette'?'':'none';
+}
+
+function setPalette(colors, id){
+  state.palette=colors;
+  document.querySelectorAll('.pal-btn').forEach(b=>b.classList.toggle('active',b.dataset.id===id));
+}
+
+// Prompt keyword matching
+function applyPrompt(){
+  const text=document.getElementById('prompt-input').value.toLowerCase();
+  quickPrompt(text);
+}
+function quickPrompt(text){
+  document.getElementById('prompt-input').value=text;
+  const t=text.toLowerCase();
+  let algo='plasma', pal=PALETTES.find(p=>p.id==='plasma');
+  if(/aurora|northern light|worship|spirit/.test(t)){algo='aurora';pal=PALETTES.find(p=>p.id===(/worship|spirit/.test(t)?'worship':'aurora'));}
+  else if(/fluid|ink|water|flow|liquid/.test(t)){algo='fluid';pal=PALETTES.find(p=>p.id==='ocean');}
+  else if(/particle|spark|magic|fairy|star/.test(t)){algo='particles';pal=PALETTES.find(p=>p.id==='plasma');}
+  else if(/mandelbrot|fractal|zoom/.test(t)){algo='mandelbrot';pal=PALETTES.find(p=>p.id==='plasma');}
+  else if(/mandala|kaleidoscope|sacred|geometry|symmetry/.test(t)){algo='symmetry';pal=PALETTES.find(p=>p.id==='worship');}
+  else if(/boid|flock|bird|swarm|murmuration/.test(t)){algo='boids';pal=PALETTES.find(p=>p.id==='aurora');}
+  else if(/wave|ripple|interference/.test(t)){algo='waves';pal=PALETTES.find(p=>p.id==='ocean');}
+  else if(/crystal|snowflake|ice|frost/.test(t)){algo='dla';pal=PALETTES.find(p=>p.id==='crystal');}
+  else if(/gravity|orbit|planet|cosmic|celestial/.test(t)){algo='gravity';pal=PALETTES.find(p=>p.id==='nebula');}
+  else if(/noise|wind|field|organic/.test(t)){algo='noise';pal=PALETTES.find(p=>p.id==='forest');}
+  else if(/voronoi|cell|glass|mosaic/.test(t)){algo='voronoi';pal=PALETTES.find(p=>p.id==='glass');}
+  else if(/plasma|psychedelic|neon|rainbow/.test(t)){algo='plasma';pal=PALETTES.find(p=>p.id==='plasma');}
+  else if(/nebula|space|cosmic/.test(t)){algo='particles';pal=PALETTES.find(p=>p.id==='nebula');}
+  else if(/fire|flame|blaze|energy/.test(t)){algo='particles';pal=PALETTES.find(p=>p.id==='fire');}
+  if(pal) setPalette(pal.colors, pal.id);
+  setAlgo(algo);
+}
+
+// Build algo grid
+const grid=document.getElementById('algo-grid');
+for(const a of ALGOS){
+  const btn=document.createElement('button');
+  btn.className='algo-btn'+(a.id===state.algo?' active':'');
+  btn.dataset.id=a.id;
+  btn.innerHTML=`<span style="font-size:16px">${a.emoji}</span><span>${a.name}</span>`;
+  btn.onclick=()=>setAlgo(a.id);
+  grid.appendChild(btn);
+}
+
+// Build palette grid
+const pgrid=document.getElementById('palette-grid');
+for(const p of PALETTES){
+  const btn=document.createElement('button');
+  btn.className='pal-btn'+(p.id==='aurora'?' active':'');
+  btn.dataset.id=p.id;
+  btn.innerHTML=`<div class="swatches">${p.colors.map(c=>`<div style="background:${c}"></div>`).join('')}</div><span>${p.name}</span>`;
+  btn.onclick=()=>setPalette(p.colors,p.id);
+  pgrid.appendChild(btn);
+}
+
+// Keyboard shortcut
+document.getElementById('prompt-input').addEventListener('keydown',e=>{
+  if(e.key==='Enter'){e.preventDefault();applyPrompt();}
+});
+
+// Start
+resize();
+document.getElementById('algo-name').textContent=state.algo;
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
