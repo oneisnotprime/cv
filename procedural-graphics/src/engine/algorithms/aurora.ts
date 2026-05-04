@@ -228,10 +228,11 @@ export const aurora: Algorithm = {
       // Gradient fill: color fading at edges
       const gradY = baseY - bandWidth;
       const grad = c.createLinearGradient(0, gradY, 0, gradY + bandWidth * 2);
-      const alpha = intensity * (0.3 + 0.4 * Math.sin(t + bi));
+      const alpha = Math.max(0, Math.min(1, intensity * (0.3 + 0.4 * Math.sin(t + bi))));
+      const toHex = (v: number) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0');
       grad.addColorStop(0,   colPalette[0] + '00');
-      grad.addColorStop(0.3, colPalette[1] + Math.round(alpha * 200).toString(16).padStart(2, '0'));
-      grad.addColorStop(0.7, colPalette[2] + Math.round(alpha * 160).toString(16).padStart(2, '0'));
+      grad.addColorStop(0.3, colPalette[1] + toHex(alpha * 200));
+      grad.addColorStop(0.7, colPalette[2] + toHex(alpha * 160));
       grad.addColorStop(1,   colPalette[0] + '00');
 
       c.fillStyle = grad;
