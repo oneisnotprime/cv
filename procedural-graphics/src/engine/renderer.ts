@@ -94,7 +94,7 @@ export class ProceduralRenderer {
     this.start();
   }
 
-  updateParams(params: Partial<Params>) {
+  updateParams(params: Params) {
     this.params = { ...this.params, ...params };
   }
 
