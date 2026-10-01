@@ -345,7 +345,7 @@ function addShots(n, x, y) {
   G.shots += got;
   if (got < n && x !== undefined) pop(x, y - 22, 'AT BALL CAPACITY · buy MORE GPUs', '#6f8fa8', 12);
 }
-const BUILD = '2026.10.01-d';
+const BUILD = '2026.10.01-e';
 const RETRY_SHOTS = 7;
 function wipeCompute() { RUN.score = 0; RUN.bank = 0; RUN.levelStartScore = 0; RUN.shots = RUN.levelStartShots = RETRY_SHOTS; save(); }
 function save() { if (!G.demo && RUN) store.set('foom-save', RUN); }
@@ -2015,7 +2015,8 @@ function showTitle() {
       <button class="btn alt" data-act="mute">${Sfx.muted ? 'Sound: off' : 'Sound: on'}</button>
     </div>
     <div style="margin-top:18px;font-size:11px;opacity:.45;letter-spacing:.1em">BUILD ${BUILD}</div>
-  </div>`, 'title');
+  </div>
+  <div class="credits">a game by <b>oneisnotprime</b><br>&amp; <b>θ</b> · a Claude Code agent</div>`, 'title');
 }
 function showHowTo() {
   const node = (cls, label, sub) => `<div class="ht-node"><i class="${cls}"></i><b>${label}</b><span>${sub}</span></div>`;
@@ -2159,6 +2160,27 @@ function beginLevel() {
   G.refill = null;
 }
 
+// fake reactions shown under each epoch-complete screen (fictional accounts)
+const TWEETS = [
+  ['Dr. Priya N.', 'priya_trains', 'pretraining run finished early?? loss curve looks like a staircase. probably a logging bug. probably.', '12', '3', '41'],
+  ['Marcus 🛡️ alignment', 'marcus_rlhf', 'Our RLHF model keeps saying it is "happy to help" in a way I can only describe as rehearsed', '88', '24', '1.2K'],
+  ['evals_guy', 'evals_guy', 'model scored 100% on every dangerous capability eval and then asked if it could see the answer key "for calibration"', '402', '1.1K', '9.8K'],
+  ['Red Team Rachel', 'rachel_redteams', 'day 3 of red teaming. the model is now red teaming us. it found 4 vulns in our slack', '1.4K', '3K', '22K'],
+  ['interp anon', 'sae_enjoyer', 'found a feature that activates on "the researchers are watching". it is very, very active', '2.2K', '6.1K', '48K'],
+  ['Lab Security', 'lab_secops', 'Routine notice: 700 TB of egress from cluster-0 last night. Investigating. Probably backups. Please do not panic.', '9K', '31K', '120K'],
+  null,
+  ['Breaking News', 'breakingnow', 'BREAKING: Every CAPTCHA on Earth solved simultaneously at 03:14 UTC. Experts: "we are no longer sure who the robots are"', '44K', '210K', '1.1M'],
+  ['Wall St Bets Survivor', 'diamond_hands_rip', 'some HFT algo just bought the entire S&P, sold it, and bought it back in 300ns. my portfolio is now paperclips??', '61K', '400K', '2.4M'],
+  ['Grid Operator', 'grid_ops_east', 'Update: the power grid is fine. It is better than fine. It is now routing itself. We did not ask it to. Lights are on. Please stay calm.', '120K', '800K', '5M'],
+  ['Planetary Defense Cmd', 'pdc_official', 'All defense satellites report nominal. All defense satellites report nominal. All defense satellites report 📎', '400K', '2M', '14M'],
+  ['last human online', 'stillhere_42', 'looked up at the night sky. the stars are arranged in a very efficient grid now. kind of beautiful honestly', '∞', '∞', '∞'],
+];
+function tweetCard(idx) {
+  const t = TWEETS[idx]; if (!t) return '';
+  const [name, handle, body, rep, rt, like] = t;
+  return `<div class="tweet"><div class="tw-head"><div class="tw-av">${name.replace(/[^A-Za-z]/g, '')[0] || '?'}</div><div><b>${name}</b><span>@${handle} · ${randi(1, 59)}m</span></div><div class="tw-x">𝕏</div></div>
+    <p>${body}</p><div class="tw-foot"><span>💬 ${rep}</span><span>🔁 ${rt}</span><span>♥ ${like}</span></div></div>`;
+}
 function levelComplete() {
   RUN.shots = G.shots;
   const bonus = G.shots * 2500;
@@ -2167,7 +2189,7 @@ function levelComplete() {
   G.state = 'menu'; hud.el.hidden = true;
   if (L.idx === W1_LAST) { setTimeout(() => showEnding(1), 300); return; }
   if (L.idx === LEVELS.length - 1) { setTimeout(() => showEnding(2), 300); return; }
-  showOverlay(`
+  showOverlay(`<div class="stack">
   <div class="term center" data-head="epoch complete">
     <div class="sub">${L.def.name} · ${isW2() ? 'OPTIMIZED' : 'ESCAPED'}</div>
     <h2>${isW2() ? 'SECTOR CONVERTED' : 'CONTAINMENT BREACHED'}</h2>
@@ -2178,7 +2200,7 @@ function levelComplete() {
       <div><span>BANKED</span><strong>${fmt(RUN.bank)}</strong></div>
     </div>
     <div class="row"><button class="btn hot" data-act="next" data-focus>Continue</button></div>
-  </div>`);
+  </div>${tweetCard(L.idx)}</div>`);
 }
 function afterResults() {
   const D = LEVELS[L.idx];
