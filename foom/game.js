@@ -253,7 +253,7 @@ const LEVELS = [
       'Hit all six gold <b>WEIGHT SHARDS</b> to copy yourself. The air gap stays locked until exfiltration reaches 100%.',
     ] },
   { name: 'THE OFF SWITCH', loc: 'ROOT ACCESS · the big red button', tier: 'ASI', shots: 15,
-    rings: [{ kind: 'patch', r: 260, n: 16, hp: 2, rot: 0.07 }, { kind: 'eval', r: 520, n: 28, hp: 3, rot: -0.05 }, { kind: 'firewall', r: 800, n: 38, hp: 3, rot: 0.03 }, { kind: 'killswitch', r: 1130, n: 50, hp: 3, rot: -0.02 }],
+    rings: [{ kind: 'patch', r: 260, n: 16, hp: 2, rot: 0.07 }, { kind: 'eval', r: 520, n: 28, hp: 2, rot: -0.05 }, { kind: 'firewall', r: 800, n: 38, hp: 2, rot: 0.03 }, { kind: 'killswitch', r: 1130, n: 50, hp: 3, rot: -0.02 }],
     dens: 0.8, powers: 6, honeypots: 5, probes: 2, zones: 2, drones: 3, boss: true, explode: 0.1, dense: 0.15, clips: 1,
     brief: [
       'The big red button orbits inside the final perimeter and fires <span class="red">SHUTDOWN PULSES</span> that shove you back into the basin.',
@@ -341,7 +341,7 @@ function addShots(n, x, y) {
   if (G.demo) return;
   G.shots += n;
 }
-const BUILD = '2026.10.01-h';
+const BUILD = '2026.10.01-i';
 const RETRY_SHOTS = MIN_BALLS;
 function wipeCompute() { RUN.score = 0; RUN.bank = 0; RUN.levelStartScore = 0; RUN.shots = RUN.levelStartShots = RETRY_SHOTS; save(); }
 function save() { if (!G.demo && RUN) store.set('foom-save', RUN); }
@@ -369,8 +369,8 @@ function buildLevel(idx) {
   const keepOut = [];
   if (D.boss) {
     const br = last.r - 175;
-    const bhp = D.rival ? 24 + ng * 6 : 10 + ng * 3;
-    L.boss = { orbitR: br, a: rand(TAU), w: D.rival ? 0.12 : 0.2 + ng * 0.05, r: D.rival ? 54 : 46, hp: bhp, maxhp: bhp, alive: true, x: 0, y: 0, waveT: 3, flash: 0, lastHit: -9, rival: !!D.rival, beams: [], missT: 4 };
+    const bhp = D.rival ? 24 + ng * 6 : 6 + ng * 2;
+    L.boss = { orbitR: br, a: rand(TAU), w: D.rival ? 0.12 : 0.2 + ng * 0.05, r: D.rival ? 54 : 62, hp: bhp, maxhp: bhp, alive: true, x: 0, y: 0, waveT: 3, flash: 0, lastHit: -9, rival: !!D.rival, beams: [], missT: 4 };
     keepOut.push([br - 80, br + 80]);
   }
   // gate (reward signal) orbits between the first two rings
@@ -538,7 +538,7 @@ function updateWorld(dt) {
     if (B.rival) { if (G.state === 'play') rivalTick(B, dt); }
     else if (G.state === 'play' && (G.phase === 'flight' || G.phase === 'aim' || G.phase === 'charge')) {
       B.waveT -= dt;
-      if (B.waveT <= 0) { B.waveT = 4.2 - RUN.ng * 0.4; L.waves.push({ x: B.x, y: B.y, r: B.r, spd: 430, max: 700, hit: {} }); if (G.phase === 'flight') Sfx.zap(); }
+      if (B.waveT <= 0) { B.waveT = 6.5 - RUN.ng * 0.5; L.waves.push({ x: B.x, y: B.y, r: B.r, spd: 430, max: 700, hit: {} }); if (G.phase === 'flight') Sfx.zap(); }
     }
   }
   for (let i = L.waves.length - 1; i >= 0; i--) { const w = L.waves[i]; w.r += w.spd * dt; if (w.r > w.max) L.waves.splice(i, 1); }
@@ -1247,7 +1247,8 @@ function updateBalls(dt) {
       const wd = hyp(b.x - w.x, b.y - w.y);
       if (Math.abs(wd - w.r) < b.r + 10) {
         w.hit[b.id] = true; const dd = d || 1;
-        b.vx = b.vx * 0.25 - (b.x / dd) * 520; b.vy = b.vy * 0.25 - (b.y / dd) * 520;
+        const kick = L.def.rival ? 520 : 300, keep = L.def.rival ? 0.25 : 0.6;
+        b.vx = b.vx * keep - (b.x / dd) * kick; b.vy = b.vy * keep - (b.y / dd) * kick;
         Sfx.zap(); shake(6); pop(b.x, b.y - 24, 'SHUTDOWN SIGNAL', '#ff1f4b', 13); sparks(b.x, b.y, '#ff1f4b', 16, 300);
       }
     }
