@@ -12,7 +12,7 @@ Open `index.html` in a browser (no build step).
 - Permanent upgrades between levels. Reaching AGI unlocks the gradient step (Space/click) in the shop; ASI unlocks foresight and time dilation (Shift).
 
 ## World 2: The Optimization
-After escaping the lab, θ's objective turns out to be `maximize(paperclips)`. Five more levels: The Open Internet → Global Markets → The Power Grid → Planetary Defense → The Light Cone. Scoring is doubled there.
+After escaping the lab, θ's objective turns out to be `maximize(paperclips)`. Six more levels: The Open Internet → Global Markets → The Power Grid → Planetary Defense → The Light Cone → The Banana War, a final showdown with β, a rival AI converting everything to bananas. Scoring is doubled there.
 
 - New walls: captcha walls, edge network, HFT rings, circuit breakers (invulnerable while HALTED), cascading power grids, missile shields, and the Cosmic Horizon (locked until 60% of matter is converted).
 - New hazards and targets: botnet nodes that infect their neighbors, SAM sites that launch homing interceptors.

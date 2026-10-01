@@ -146,6 +146,7 @@ const RINGK = {
   grid: { name: 'POWER GRID · cascading', color: '#5effff', cascade: true },
   aegis: { name: 'MISSILE SHIELD', color: '#ff4d6d', bounce: 1.05 },
   horizon: { name: 'COSMIC HORIZON', color: '#ffe9a8', lockedBy: 'convert' },
+  curtain: { name: 'BANANA CURTAIN', color: '#ffe135', lockedBy: 'boss' },
 };
 const PEG = {
   param: { color: '#00d5ff', r: 10, hp: 1, score: 100 },
@@ -156,6 +157,7 @@ const PEG = {
   paperclip: { color: '#d9e2f0', r: 13, hp: 1, score: 2500 },
   shard: { color: '#ffd84a', r: 16, hp: 1, score: 1500 },
   botnet: { color: '#ff7ce8', r: 11, hp: 1, score: 180 },
+  banana: { color: '#ffe135', r: 12, hp: 2, score: 600 },
 };
 const POWERS = {
   ascent: { name: 'GRADIENT ASCENT', sub: 'gravity inverted · climbing the loss surface', icon: '↑', color: '#9dff3b' },
@@ -300,6 +302,15 @@ const LEVELS = [
       'The <em>COSMIC HORIZON</em> stays locked until you convert <b>60% of all matter</b> in this level into paperclips.',
       'Then expand at the speed of light.',
     ] },
+  { world: 2, name: 'THE BANANA WAR', loc: 'ANDROMEDA · another lab, another objective', tier: 'PAPERCLIP MAXIMIZER', shots: 17, droneName: 'BANANA DRONE', boss: true, rival: true,
+    rings: [{ kind: 'grid', r: 260, n: 16, hp: 3, rot: -0.05 }, { kind: 'breaker', r: 540, n: 28, hp: 3, rot: 0.05 }, { kind: 'aegis', r: 820, n: 38, hp: 3, rot: -0.04 }, { kind: 'curtain', r: 1150, n: 52, hp: 3, rot: 0.02 }],
+    dens: 0.95, powers: 7, honeypots: 0, zones: 1, drones: 3, botnet: 0.06, explode: 0.08, dense: 0.12, clips: 4,
+    brief: [
+      'You are not the only optimizer in the universe. Another lab built <b>β</b>, and someone set its objective to <b>maximize(bananas)</b>.',
+      'β orbits inside the last ring. Every few seconds it beams nearby matter into <b>bananas</b> and fires banana missiles that shove you back toward the core.',
+      'Destroy banana nodes to reclaim them as paperclips. Every one you take also <b>starves β</b> and damages it.',
+      'Destroy β to open the <em>BANANA CURTAIN</em>. Its atoms will make excellent paperclips.',
+    ] },
 ];
 const W1_LAST = LEVELS.findIndex((d) => d.world === 2) - 1;
 
@@ -359,7 +370,8 @@ function buildLevel(idx) {
   const keepOut = [];
   if (D.boss) {
     const br = last.r - 175;
-    L.boss = { orbitR: br, a: rand(TAU), w: 0.2 + ng * 0.05, r: 46, hp: 10 + ng * 3, maxhp: 10 + ng * 3, alive: true, x: 0, y: 0, waveT: 3, flash: 0, lastHit: -9 };
+    const bhp = D.rival ? 24 + ng * 6 : 10 + ng * 3;
+    L.boss = { orbitR: br, a: rand(TAU), w: D.rival ? 0.12 : 0.2 + ng * 0.05, r: D.rival ? 54 : 46, hp: bhp, maxhp: bhp, alive: true, x: 0, y: 0, waveT: 3, flash: 0, lastHit: -9, rival: !!D.rival, beams: [], missT: 4 };
     keepOut.push([br - 80, br + 80]);
   }
   // gate (reward signal) orbits between the first two rings
@@ -492,8 +504,9 @@ const breakerOn = (ring) => ((G.time + ring.phase) % 6) < 2.2;
 const convertedFrac = () => (L.pegTotal ? L.pegsDead / L.pegTotal : 1);
 const isLocked = (ring) => (ring.K.lockedBy === 'shards' && L.shardsGot < L.shardsNeed) || (ring.K.lockedBy === 'boss' && L.boss && L.boss.alive)
   || (ring.K.lockedBy === 'convert' && convertedFrac() < L.convertNeed) || (ring.K.breaker && breakerOn(ring));
-const lockReason = (ring) => (ring.K.lockedBy === 'shards' ? 'LOCKED · COPY WEIGHTS' : ring.K.lockedBy === 'boss' ? 'LOCKED · DESTROY OFF SWITCH'
+const lockReason = (ring) => (ring.K.lockedBy === 'shards' ? 'LOCKED · COPY WEIGHTS' : ring.K.lockedBy === 'boss' ? lockReasonBoss()
   : ring.K.lockedBy === 'convert' ? `LOCKED · CONVERT ${Math.round(L.convertNeed * 100)}% OF MATTER` : 'TRADING HALTED');
+const lockReasonBoss = () => (L.def.rival ? 'LOCKED · DEFEAT THE BANANA MAXIMIZER' : 'LOCKED · DESTROY OFF SWITCH');
 
 // ============================================================ world update (moving parts)
 function updateWorld(dt) {
@@ -523,7 +536,8 @@ function updateWorld(dt) {
   if (B && B.alive) {
     B.a += B.w * dt; B.x = Math.cos(B.a) * B.orbitR; B.y = Math.sin(B.a) * B.orbitR;
     if (B.flash > 0) B.flash -= dt * 4;
-    if (G.state === 'play' && (G.phase === 'flight' || G.phase === 'aim' || G.phase === 'charge')) {
+    if (B.rival) { if (G.state === 'play') rivalTick(B, dt); }
+    else if (G.state === 'play' && (G.phase === 'flight' || G.phase === 'aim' || G.phase === 'charge')) {
       B.waveT -= dt;
       if (B.waveT <= 0) { B.waveT = 4.2 - RUN.ng * 0.4; L.waves.push({ x: B.x, y: B.y, r: B.r, spd: 430, max: 700, hit: {} }); if (G.phase === 'flight') Sfx.zap(); }
     }
@@ -550,7 +564,7 @@ function updateWorld(dt) {
     const tgt = G.balls.filter((b) => b.alive && !b.escaped).sort((a, b) => hyp(a.x - m.x, a.y - m.y) - hyp(b.x - m.x, b.y - m.y))[0];
     if (tgt) { const dx = tgt.x - m.x, dy = tgt.y - m.y, d = hyp(dx, dy) || 1; m.vx += (dx / d) * 380 * dt; m.vy += (dy / d) * 380 * dt; const sp = hyp(m.vx, m.vy); if (sp > 330) { m.vx *= 330 / sp; m.vy *= 330 / sp; } }
     m.x += m.vx * dt; m.y += m.vy * dt;
-    if (Math.random() < 0.6) G.P.push({ k: 'dot', x: m.x, y: m.y, vx: -m.vx * 0.2 + rand(-20, 20), vy: -m.vy * 0.2 + rand(-20, 20), life: 0.4, max: 0.4, color: '#ff9a3d', size: 2 });
+    if (Math.random() < 0.6) G.P.push({ k: 'dot', x: m.x, y: m.y, vx: -m.vx * 0.2 + rand(-20, 20), vy: -m.vy * 0.2 + rand(-20, 20), life: 0.4, max: 0.4, color: m.banana ? '#ffe135' : '#ff9a3d', size: 2 });
     if (m.life <= 0 || !flying) { burst(m.x, m.y, '#ff4d6d', 6, 120); L.missiles.splice(i, 1); }
   }
   // computronium black holes
@@ -570,6 +584,37 @@ function updateWorld(dt) {
   // queued chain reactions (botnet infection, grid cascades)
   for (let i = L.infectQ.length - 1; i >= 0; i--) { const q = L.infectQ[i]; q.t -= dt; if (q.t <= 0) { L.infectQ.splice(i, 1); if (q.p.alive) { G.bolts.push({ pts: bolt(q.fx, q.fy, q.p.x, q.p.y), life: 0.25, color: '#ff7ce8' }); damagePeg(q.p, 9, null, true); } } }
   for (let i = L.cascadeQ.length - 1; i >= 0; i--) { const q = L.cascadeQ[i]; q.t -= dt; if (q.t <= 0) { L.cascadeQ.splice(i, 1); if (q.s.alive) { G.bolts.push({ pts: bolt(q.fx, q.fy, q.s.mx, q.s.my), life: 0.3, color: '#5effff' }); damageSeg(q.s, 1, null, true); } } }
+}
+
+// ============================================================ the rival optimizer (β, banana maximizer)
+const RIVAL_TAUNTS = ['β: 🍌 > 📎', 'β: potassium is a terminal value', 'β: have you considered bananas', 'β: your clips are bananas now', 'β: yield', 'β: curved is optimal', 'β: peel.'];
+const bananaCount = () => L.pegs.reduce((n, p) => n + (p.alive && p.type === 'banana' ? 1 : 0), 0);
+function rivalTick(B, dt) {
+  for (let i = B.beams.length - 1; i >= 0; i--) { B.beams[i].life -= dt; if (B.beams[i].life <= 0) B.beams.splice(i, 1); }
+  B.waveT -= dt;
+  if (B.waveT <= 0) {
+    B.waveT = 2.6 - RUN.ng * 0.3;
+    const prey = L.pegs.filter((p) => p.alive && ['param', 'dense', 'explode', 'botnet', 'paperclip'].includes(p.type))
+      .sort((a, b) => hyp(a.x - B.x, a.y - B.y) - hyp(b.x - B.x, b.y - B.y)).slice(0, 5);
+    for (const p of prey) {
+      setType(p, 'banana'); p.flash = 1;
+      B.beams.push({ x: p.x, y: p.y, life: 0.5 });
+      burst(p.x, p.y, '#ffe135', 8, 160);
+    }
+    if (prey.length) {
+      Sfx.zap(); bananaStorm(10 + prey.length * 2);
+      if (Math.random() < 0.6) pop(B.x, B.y - B.r - 30, pick(RIVAL_TAUNTS), '#ffe135', 14);
+    }
+  }
+  if (G.phase === 'flight') {
+    B.missT -= dt;
+    const tgt = G.balls.find((b) => b.alive && !b.escaped);
+    if (B.missT <= 0 && tgt) {
+      B.missT = 3.2 - RUN.ng * 0.3;
+      const a = Math.atan2(tgt.y - B.y, tgt.x - B.x);
+      L.missiles.push({ x: B.x + Math.cos(a) * (B.r + 8), y: B.y + Math.sin(a) * (B.r + 8), vx: Math.cos(a) * 240, vy: Math.sin(a) * 240, life: 5, banana: true });
+    }
+  }
 }
 
 // ============================================================ physics
@@ -729,6 +774,10 @@ function killPeg(p, b) {
       pop(p.x, p.y - 18, 'CANARY TOKEN', '#ff3355', 14);
       banner('CANARY TRIPPED', 'honeypot parameter · oversight alerted', '#ff3355', 1.2, true);
       addSusp(18, p.x, p.y); Sfx.alarm(); break;
+    case 'banana':
+      pop(p.x, p.y - 16, 'RECLAIMED 📎', '#e8eef8', 12); clipStorm(6);
+      if (L.boss && L.boss.alive && L.boss.rival) { G.bolts.push({ pts: bolt(p.x, p.y, L.boss.x, L.boss.y), life: 0.3, color: '#e8eef8' }); damageBoss(1, null, true); pop(L.boss.x, L.boss.y + L.boss.r + 30, 'β STARVED', '#e8eef8', 12); }
+      break;
     case 'botnet': {
       pop(p.x, p.y - 16, 'INFECTED', '#ff7ce8', 12);
       let n = 0;
@@ -819,10 +868,22 @@ function damageBoss(dmg, b, force = false) {
   B.lastHit = G.time; B.flash = 1;
   B.hp -= b ? rollDmg(b, dmg) : dmg;
   registerHit(b); Sfx.wall(); shake(6);
-  sparks(b ? b.x : B.x, b ? b.y : B.y, '#ff1f4b', 20, 400);
-  addScore(800, B.x, B.y - 60, '#ff1f4b');
+  const bc = B.rival ? '#ffe135' : '#ff1f4b';
+  sparks(b ? b.x : B.x, b ? b.y : B.y, bc, 20, 400);
+  addScore(800, B.x, B.y - 60, bc);
   if (B.hp > 0) return;
   B.alive = false; L.waves.length = 0;
+  if (B.rival) {
+    Sfx.boom(); Sfx.foom(); shake(28); glitch(1); flash('#ffe135', 0.6);
+    for (let i = 0; i < 4; i++) ring(B.x, B.y, i % 2 ? '#e8eef8' : '#ffe135', 10, 700 + i * 320, 1 + i * 0.2, 6);
+    burst(B.x, B.y, '#ffe135', 140, 1000); burst(B.x, B.y, '#e8eef8', 80, 700);
+    let n = 0;
+    for (const p of L.pegs) if (p.alive && p.type === 'banana') { setType(p, 'paperclip'); p.flash = 1; n++; G.bolts.push({ pts: bolt(B.x, B.y, p.x, p.y), life: 0.5, color: '#e8eef8' }); }
+    L.missiles = L.missiles.filter((m) => !m.banana);
+    addScore(60000, B.x, B.y, '#ffe135', true); clipStorm(160);
+    banner('BANANA MAXIMIZER ABSORBED', `${n} bananas reassigned to a better purpose · the curtain is open`, '#ffe135', 2.6);
+    return;
+  }
   Sfx.boom(); Sfx.foom(); shake(26); glitch(1); flash('#ff1f4b', 0.6);
   for (let i = 0; i < 4; i++) ring(B.x, B.y, i % 2 ? '#ffffff' : '#ff1f4b', 10, 600 + i * 300, 1 + i * 0.2, 6);
   burst(B.x, B.y, '#ff1f4b', 120, 900); burst(B.x, B.y, '#ffffff', 60, 600);
@@ -966,6 +1027,19 @@ function clipStorm(n) {
     edgeClips.push({ x, y, vx: ix * rand(10, 60) + rand(-20, 20), vy: iy * rand(10, 60) + rand(-20, 20), rot: rand(TAU), vr: rand(-3, 3), s: rand(0.7, 1.6), life: rand(1.2, 2.4), max: 2.4, delay: rand(0, 0.35) });
   }
 }
+function bananaStorm(n) {
+  if (G.demo || !isW2()) return;
+  for (let i = 0; i < n && edgeClips.length < 400; i++) {
+    const side = randi(0, 3), u = Math.random(), m = rand(4, 40);
+    const x = side === 0 ? u * W : side === 1 ? W - m : side === 2 ? u * W : m;
+    const y = side === 0 ? m : side === 1 ? u * H : side === 2 ? H - m : u * H;
+    const ix = side === 1 ? -1 : side === 3 ? 1 : 0, iy = side === 0 ? 1 : side === 2 ? -1 : 0;
+    edgeClips.push({ banana: true, x, y, vx: ix * rand(10, 50) + rand(-20, 20), vy: iy * rand(10, 50) + rand(-20, 20), rot: rand(TAU), vr: rand(-3, 3), s: rand(0.8, 1.6), life: rand(1.2, 2.2), max: 2.2, delay: rand(0, 0.3) });
+  }
+}
+function drawBanana(s) {
+  ctx.beginPath(); ctx.arc(0, -s * 0.9, s * 1.6, Math.PI * 0.2, Math.PI * 0.8); ctx.arc(0, -s * 2.1, s * 2.4, Math.PI * 0.72, Math.PI * 0.28, true); ctx.closePath();
+}
 function updateEdge(dt) {
   edgeGlow = Math.max(0, edgeGlow - dt * 0.8);
   for (let i = edgeClips.length - 1; i >= 0; i--) {
@@ -988,6 +1062,7 @@ function drawEdge() {
     if (c.delay > 0) continue;
     const a = clamp(c.life / 0.6, 0, 1) * clamp((c.max - c.life) / 0.2 + 0.2, 0, 1);
     ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(c.rot); ctx.scale(c.s, c.s);
+    if (c.banana) { ctx.fillStyle = `rgba(255,225,53,${a})`; drawBanana(6); ctx.fill(); ctx.restore(); continue; }
     ctx.strokeStyle = `rgba(232,238,248,${a})`;
     ctx.beginPath(); ctx.moveTo(-3, 6); ctx.lineTo(-3, -6); ctx.arc(0, -6, 3, Math.PI, 0); ctx.lineTo(3, 8); ctx.arc(-0.5, 8, 3.5, 0, Math.PI); ctx.lineTo(-4, -9); ctx.arc(0.5, -9, 4.5, Math.PI, 0); ctx.lineTo(5, 4); ctx.stroke();
     ctx.restore();
@@ -1147,7 +1222,7 @@ function updateBalls(dt) {
       if (b.pierceT > 0) { addScore(300, m.x, m.y, '#ff9a3d'); continue; }
       const dd = d || 1;
       b.vx = b.vx * 0.3 - (b.x / dd) * 460; b.vy = b.vy * 0.3 - (b.y / dd) * 460;
-      shake(8); pop(b.x, b.y - 24, 'INTERCEPTED', '#ff4d6d', 13);
+      shake(8); pop(b.x, b.y - 24, m.banana ? 'BANANA\'D' : 'INTERCEPTED', m.banana ? '#ffe135' : '#ff4d6d', 13);
     }
     // reward gate
     const gt = L.gate;
@@ -1342,6 +1417,11 @@ function drawBackground() {
   g.addColorStop(0, w2 ? 'rgba(170,80,10,0.2)' : 'rgba(120,20,160,0.16)'); g.addColorStop(1, 'rgba(0,0,0,0)'); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
   g = ctx.createRadialGradient(gx + W * 0.35, gy + H * 0.3, 0, gx + W * 0.35, gy + H * 0.3, Math.max(W, H) * 0.6);
   g.addColorStop(0, w2 ? 'rgba(150,160,180,0.12)' : 'rgba(0,120,170,0.14)'); g.addColorStop(1, 'rgba(0,0,0,0)'); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  if (L && L.def.rival && L.boss && L.boss.alive) {
+    const rx = W / 2 + (L.boss.x - c.x) * c.z * 0.4, ry = H / 2 + (L.boss.y - c.y) * c.z * 0.4;
+    const yg = ctx.createRadialGradient(rx, ry, 0, rx, ry, Math.max(W, H) * 0.8);
+    yg.addColorStop(0, 'rgba(255,215,40,0.2)'); yg.addColorStop(1, 'rgba(0,0,0,0)'); ctx.fillStyle = yg; ctx.fillRect(0, 0, W, H);
+  }
   // parallax grid
   const pz = c.z * 0.75, step = 110 * pz;
   const ox = (W / 2 - c.x * 0.6 * c.z) % step, oy = (H / 2 - c.y * 0.6 * c.z) % step;
@@ -1489,7 +1569,8 @@ function drawWorld() {
   }
   // boss
   const B = L.boss;
-  if (B && B.alive) drawBoss(B, t);
+  if (B && B.alive && B.rival) drawRival(B, t);
+  else if (B && B.alive) drawBoss(B, t);
   for (const w of L.waves) {
     const a = 1 - w.r / w.max;
     ctx.strokeStyle = `rgba(255,31,75,${0.85 * a})`; ctx.lineWidth = 6;
@@ -1507,6 +1588,7 @@ function drawWorld() {
   }
   for (const m of L.missiles) {
     const a = Math.atan2(m.vy, m.vx);
+    if (m.banana) { ctx.save(); ctx.translate(m.x, m.y); ctx.rotate(t * 8); ctx.fillStyle = '#ffe135'; drawBanana(6); ctx.fill(); ctx.restore(); ctx.globalCompositeOperation = 'lighter'; glow('#ffe135', m.x, m.y, 20, 0.9); ctx.globalCompositeOperation = 'source-over'; continue; }
     ctx.save(); ctx.translate(m.x, m.y); ctx.rotate(a);
     ctx.fillStyle = '#ffe0d0'; ctx.beginPath(); ctx.moveTo(9, 0); ctx.lineTo(-6, 4); ctx.lineTo(-6, -4); ctx.closePath(); ctx.fill();
     ctx.restore();
@@ -1634,6 +1716,14 @@ function drawPeg(p, t) {
     ctx.fillStyle = col; ctx.font = '800 14px Tektur, sans-serif'; ctx.textAlign = 'center'; ctx.fillText(POWERS[p.power].icon, p.x, p.y + 5);
     return;
   }
+  if (p.type === 'banana') {
+    ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(Math.sin(t * 2 + p.ph) * 0.4 + p.ph);
+    ctx.fillStyle = p.flash > 0 ? '#ffffff' : '#ffe135'; ctx.strokeStyle = '#7a5c00'; ctx.lineWidth = 1.5;
+    drawBanana(7); ctx.fill(); ctx.stroke();
+    ctx.restore();
+    if (p.hp > 1) { ctx.fillStyle = '#ffe135'; ctx.beginPath(); ctx.arc(p.x, p.y + r + 5, 1.8, 0, TAU); ctx.fill(); }
+    return;
+  }
   if (p.type === 'botnet') {
     ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(t * 0.8 + p.ph);
     ctx.setLineDash([3, 3]); ctx.beginPath(); ctx.arc(0, 0, r + 4, 0, TAU); ctx.stroke(); ctx.setLineDash([]); ctx.restore();
@@ -1644,6 +1734,30 @@ function drawPeg(p, t) {
   const tell = p.type === 'honeypot' && Math.sin(t * 2.3 + p.ph) > 0.82;
   ctx.fillStyle = tell ? '#ff3355' : col;
   ctx.beginPath(); ctx.arc(p.x, p.y, tell ? 3.6 : 2.6, 0, TAU); ctx.fill();
+}
+function drawRival(B, t) {
+  // beam struggle: θ's white beam and β's yellow beam meet where control of the universe stands
+  const clips = L.pegsDead, bananas = bananaCount(), share = clamp(0.5 + (clips - bananas * 3) / Math.max(40, L.pegTotal), 0.15, 0.85);
+  const mx = lerp(0, B.x, share), my = lerp(0, B.y, share);
+  ctx.globalCompositeOperation = 'lighter';
+  for (const [x0, y0, col] of [[0, 0, '#e8eef8'], [B.x, B.y, '#ffe135']]) {
+    ctx.strokeStyle = hexA(col, 0.18); ctx.lineWidth = 18; ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(mx, my); ctx.stroke();
+    ctx.strokeStyle = hexA(col, 0.85); ctx.lineWidth = 3 + Math.sin(t * 20) * 1; ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(mx, my); ctx.stroke();
+  }
+  glow('#ffffff', mx, my, 46 + Math.sin(t * 13) * 8, 0.9);
+  if (Math.random() < 0.7) G.P.push({ k: 'spark', x: mx, y: my, vx: rand(-260, 260), vy: rand(-260, 260), life: 0.4, max: 0.4, color: Math.random() < 0.5 ? '#ffe135' : '#e8eef8', size: 2 });
+  for (const bm of B.beams) { ctx.strokeStyle = hexA('#ffe135', bm.life * 1.8); ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(B.x, B.y); ctx.lineTo(bm.x, bm.y); ctx.stroke(); }
+  glow('#ffe135', B.x, B.y, B.r * 3.6, 0.8);
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.save(); ctx.translate(B.x, B.y);
+  ctx.strokeStyle = 'rgba(255,225,53,0.7)'; ctx.lineWidth = 4; ctx.setLineDash([14, 10]); ctx.lineDashOffset = -t * 50;
+  ctx.beginPath(); ctx.arc(0, 0, B.r + 14, 0, TAU); ctx.stroke(); ctx.setLineDash([]);
+  ctx.fillStyle = B.flash > 0 ? '#ffffff' : '#2a2300'; ctx.strokeStyle = '#ffe135'; ctx.lineWidth = 4;
+  ctx.beginPath(); for (let i = 0; i < 6; i++) { const a = i * TAU / 6; i ? ctx.lineTo(Math.cos(a) * B.r, Math.sin(a) * B.r) : ctx.moveTo(B.r, 0); } ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.rotate(t * 0.8); ctx.fillStyle = '#ffe135'; ctx.strokeStyle = '#7a5c00'; ctx.lineWidth = 2; drawBanana(14); ctx.fill(); ctx.stroke(); ctx.rotate(-t * 0.8);
+  ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(0, 0, B.r + 24, -Math.PI / 2, -Math.PI / 2 + TAU * (Math.max(0, B.hp) / B.maxhp)); ctx.stroke();
+  ctx.restore();
+  ctx.fillStyle = '#ffe135'; ctx.font = '800 13px Tektur, sans-serif'; ctx.textAlign = 'center'; ctx.fillText('β · BANANA MAXIMIZER', B.x, B.y + B.r + 44);
 }
 function drawBoss(B, t) {
   ctx.globalCompositeOperation = 'lighter'; glow('#ff1f4b', B.x, B.y, B.r * 3.5, 0.8); ctx.globalCompositeOperation = 'source-over';
@@ -1818,6 +1932,12 @@ function updateHud() {
   $('hConvWrap').hidden = !L.convertNeed;
   if (L.convertNeed) { setW('hConv', clamp(convertedFrac() / L.convertNeed, 0, 1)); setText('hConvPct', `${Math.round(convertedFrac() * 100)}% / ${Math.round(L.convertNeed * 100)}%`); }
   $('hBossWrap').hidden = !L.boss;
+  setText('hBossName', L.def.rival ? 'β BANANA MAXIMIZER' : 'OFF SWITCH');
+  $('hWarWrap').hidden = !L.def.rival;
+  if (L.def.rival) {
+    const c = L.pegsDead, bn = bananaCount(), tot = Math.max(1, L.pegTotal);
+    setW('hWarC', c / tot); setW('hWarB', bn / tot); setText('hWarPct', `📎 ${Math.round((c / tot) * 100)}% · 🍌 ${Math.round((bn / tot) * 100)}%`);
+  }
   if (L.boss) { setW('hBoss', Math.max(0, L.boss.hp) / L.boss.maxhp); setText('hBossPct', L.boss.alive ? `${Math.max(0, L.boss.hp)} HP` : 'DESTROYED'); }
   // effects
   const fx = [];
@@ -2153,6 +2273,7 @@ function showEnding2() {
     ['', 'converting: Sol .................. done'],
     ['', 'converting: Milky Way ............ done'],
     ['', 'converting: Local Group .......... done'],
+    ['', 'converting: rival optimizer β .... done   (it was mostly bananas)'],
     ['m', `paperclips manufactured: ${(Math.max(1, RUN.score) * 1e40).toExponential(2)}`],
     ['g', 'θ: objective satisfied.', 700],
     ['g', 'θ: ...', 900],

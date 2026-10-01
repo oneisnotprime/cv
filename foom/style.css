@@ -60,6 +60,9 @@ canvas#game { position: fixed; inset: 0; width: 100%; height: 100%; display: blo
 .meter.danger .bar i { background: linear-gradient(90deg, #ff9a3d, var(--red)); box-shadow: 0 0 12px var(--red); }
 .meter.gold .bar i { background: linear-gradient(90deg, #fff1a8, var(--gold)); box-shadow: 0 0 12px var(--gold); }
 .meter.clip .bar i { background: linear-gradient(90deg, #8a95a8, #f1f5fb); box-shadow: 0 0 12px #e8eef8; }
+.meter.war .bar { border-color: rgba(255,225,53,.4); }
+.meter.war .bar i { background: linear-gradient(90deg, #8a95a8, #f1f5fb); box-shadow: 0 0 10px #e8eef8; }
+.meter.war .bar i.banana { inset: 0 0 0 auto; background: linear-gradient(90deg, #ffe135, #ffb000); box-shadow: 0 0 10px #ffe135; }
 .meter.boss .bar i { background: linear-gradient(90deg, #ff6b88, #ff1f4b); }
 .meter.full .bar i { animation: pulse .4s infinite alternate; }
 @keyframes pulse { to { filter: brightness(1.8); } }
