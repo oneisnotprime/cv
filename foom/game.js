@@ -341,7 +341,7 @@ function addShots(n, x, y) {
   if (G.demo) return;
   G.shots += n;
 }
-const BUILD = '2026.10.01-f';
+const BUILD = '2026.10.01-g';
 const RETRY_SHOTS = MIN_BALLS;
 function wipeCompute() { RUN.score = 0; RUN.bank = 0; RUN.levelStartScore = 0; RUN.shots = RUN.levelStartShots = RETRY_SHOTS; save(); }
 function save() { if (!G.demo && RUN) store.set('foom-save', RUN); }
@@ -1269,7 +1269,7 @@ function updateBalls(dt) {
       } else { b.alive = false; Sfx.absorb(); ring(0, 0, '#00e5ff', CORE_R + 30, -60, 0.4, 3); burst(b.x, b.y, '#00e5ff', 14, 200); continue; }
     }
     if (d > L.exitR && G.phase === 'flight') { triggerEscape(b); return; }
-    if (b.age > b.life && G.shotTime - G.lastClear > 2) { b.alive = false; burst(b.x, b.y, '#6f8fa8', 14, 200); pop(b.x, b.y - 18, b.mesa ? 'mesa-optimizer dissolved' : b.probe ? 'probe decommissioned' : 'context window exhausted', '#6f8fa8', 12); continue; }
+    if (b.age > b.life && G.shotTime - G.lastClear > 1) { b.alive = false; burst(b.x, b.y, '#6f8fa8', 14, 200); pop(b.x, b.y - 18, b.mesa ? 'mesa-optimizer dissolved' : b.probe ? 'probe decommissioned' : 'context window exhausted', '#6f8fa8', 12); continue; }
     if (sp < 22) { b.slowT += dt; if (b.slowT > 1.2) { b.alive = false; burst(b.x, b.y, '#6f8fa8', 10, 150); pop(b.x, b.y - 18, 'converged (local minimum)', '#6f8fa8', 12); } } else b.slowT = 0;
   }
   for (let i = balls.length - 1; i >= 0; i--) if (!balls[i].alive) balls.splice(i, 1);
