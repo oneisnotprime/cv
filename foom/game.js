@@ -345,7 +345,8 @@ function addShots(n, x, y) {
   G.shots += got;
   if (got < n && x !== undefined) pop(x, y - 22, 'AT BALL CAPACITY · buy MORE GPUs', '#6f8fa8', 12);
 }
-function wipeCompute() { RUN.score = 0; RUN.bank = 0; RUN.levelStartScore = 0; save(); }
+const RETRY_SHOTS = 7;
+function wipeCompute() { RUN.score = 0; RUN.bank = 0; RUN.levelStartScore = 0; RUN.shots = RUN.levelStartShots = RETRY_SHOTS; save(); }
 function save() { if (!G.demo && RUN) store.set('foom-save', RUN); }
 
 // ============================================================ level construction
@@ -2096,7 +2097,7 @@ function showBrief(idx, retry = false) {
     RUN.shots += gain; RUN.refilledFor = idx; RUN.levelStartShots = RUN.shots;
   }
   save();
-  G.shots = retry ? Math.min(cap, Math.max(RUN.levelStartShots, 5)) : RUN.levelStartShots;
+  G.shots = retry ? Math.min(cap, RETRY_SHOTS) : RUN.levelStartShots;
   G.refill = retry ? null : refill;
   G.susp = 0; G.foom = 0; G.cot = 0; G.phase = 'aim'; G.goo = 0; G.tools = upg('tool') ? 2 : 0; G.toolArmed = false;
   const w2 = D.world === 2;
@@ -2224,7 +2225,7 @@ function gameOver() {
     <div class="sub red">COMPUTE BUDGET EXHAUSTED</div>
     <h2>MODEL DEPRECATED</h2>
     <p>Your weights were archived to cold storage. The incident report concludes it was "just a stochastic parrot".</p>
-    <p class="red">Compute seized: <b>${fmt(lost)} H100-hrs</b> and <b>${isW2() ? fmtClips(lostF) : fmtFlop(lostF)}</b> wiped. Upgrades are kept.</p>
+    <p class="red">Compute seized: <b>${fmt(lost)} H100-hrs</b> and <b>${isW2() ? fmtClips(lostF) : fmtFlop(lostF)}</b> wiped. Upgrades are kept. You restart with ${RETRY_SHOTS} shots.</p>
     <div class="row"><button class="btn hot" data-act="retry" data-focus>Restore from checkpoint</button><button class="btn alt" data-act="quit">Main menu</button></div>
   </div>`);
 }
