@@ -47,6 +47,7 @@ canvas#game { position: fixed; inset: 0; width: 100%; height: 100%; display: blo
 .meter.danger .bar { border-color: rgba(255,51,85,.35); }
 .meter.danger .bar i { background: linear-gradient(90deg, #ff9a3d, var(--red)); box-shadow: 0 0 12px var(--red); }
 .meter.gold .bar i { background: linear-gradient(90deg, #fff1a8, var(--gold)); box-shadow: 0 0 12px var(--gold); }
+.meter.clip .bar i { background: linear-gradient(90deg, #8a95a8, #f1f5fb); box-shadow: 0 0 12px #e8eef8; }
 .meter.boss .bar i { background: linear-gradient(90deg, #ff6b88, #ff1f4b); }
 .meter.full .bar i { animation: pulse .4s infinite alternate; }
 @keyframes pulse { to { filter: brightness(1.8); } }
@@ -60,6 +61,13 @@ canvas#game { position: fixed; inset: 0; width: 100%; height: 100%; display: blo
 .combo .n { font-size: 44px; line-height: 1; text-shadow: 0 0 18px var(--mag); }
 .combo .t { font-size: 11px; letter-spacing: .2em; color: var(--mag); }
 .combo .m { font-size: 14px; color: var(--gold); }
+
+.abilities { position: absolute; right: 16px; bottom: calc(160px + env(safe-area-inset-bottom, 0px)); display: grid; gap: 6px; justify-items: end; }
+.ab { pointer-events: auto; font-family: var(--display); font-weight: 800; font-size: 11px; letter-spacing: .14em; padding: 9px 12px; min-width: 120px; text-align: right; color: var(--ink); background: var(--panel); border: 1px solid rgba(192,200,216,.5); cursor: pointer; touch-action: none; }
+.ab b { color: var(--gold); margin-left: 6px; }
+.ab:hover:not(:disabled), .ab:focus-visible { border-color: #e8eef8; box-shadow: 0 0 14px rgba(232,238,248,.35); outline: none; }
+.ab:disabled { opacity: .4; cursor: default; }
+.ab.armed { border-color: #3dffd0; box-shadow: 0 0 16px rgba(61,255,208,.6); color: #3dffd0; }
 
 /* ---------- Banner ---------- */
 .banner { position: fixed; left: 0; right: 0; top: 22%; text-align: center; pointer-events: none; opacity: 0; transform: scale(.96); transition: opacity .2s, transform .2s; padding: 0 16px; }
@@ -133,6 +141,14 @@ canvas#game { position: fixed; inset: 0; width: 100%; height: 100%; display: blo
 .pips i.on { background: var(--mag); box-shadow: 0 0 6px var(--mag); }
 .card .btn { font-size: 11px; padding: 8px 10px; margin-top: 4px; }
 .card.maxed { opacity: .6; }
+.card.t2 { border-color: rgba(255,192,112,.35); background: linear-gradient(160deg, rgba(255,154,61,.08), rgba(0,0,0,.4)); }
+.card.t2 h3 { color: #ffd9a0; }
+.card.t2 .pips i.on { background: #ffd9a0; box-shadow: 0 0 6px #ffd9a0; }
+.shop-h { font-family: var(--display); font-size: 13px; letter-spacing: .16em; color: #ffd9a0; margin: 22px 0 0; display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; }
+.shop-h span { font-family: var(--mono); font-size: 11px; letter-spacing: .04em; color: var(--dim); font-weight: 400; }
+.term.w2 { border-color: rgba(255,192,112,.45); box-shadow: 0 0 40px rgba(255,154,61,.14), inset 0 0 60px rgba(255,154,61,.05); }
+.term.w2 .sub { color: #ffd9a0; }
+.big-tier.clip { font-size: clamp(30px, 7vw, 68px); text-shadow: 0 0 30px #c0c8d8, 0 0 90px #ff9a3d; }
 .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; margin-top: 14px; }
 .stats div { border: 1px solid rgba(255,255,255,.1); padding: 8px 10px; background: rgba(0,0,0,.3); }
 .stats span { display: block; font-size: 10px; color: var(--dim); letter-spacing: .16em; }
@@ -146,13 +162,16 @@ canvas#game { position: fixed; inset: 0; width: 100%; height: 100%; display: blo
 @media (max-width: 640px) {
   .hud-level { font-size: 14px; }
   .hud-loc { display: none; }
-  .hud-tl { max-width: 58vw; }
+  .hud-tl { max-width: 50vw; }
+  .score { font-size: 13px; max-width: 44vw; overflow-wrap: anywhere; }
   .hud-loss { display: none; }
   .hud-tc { top: calc(104px + env(safe-area-inset-top, 0px)); left: 16px; transform: none; text-align: left; }
   .shots { font-size: 15px; }
   .hud-bc { bottom: calc(118px + env(safe-area-inset-bottom, 0px)); width: calc(100vw - 32px); }
   .hint { display: none; }
   .combo .n { font-size: 30px; }
+  .abilities { bottom: calc(124px + env(safe-area-inset-bottom, 0px)); }
+  .ab { min-width: 96px; padding: 10px; }
   .term { padding: 18px 16px; }
 }
 @media (prefers-reduced-motion: reduce) {
