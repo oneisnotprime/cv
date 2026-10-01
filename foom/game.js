@@ -341,7 +341,7 @@ function addShots(n, x, y) {
   if (G.demo) return;
   G.shots += n;
 }
-const BUILD = '2026.10.01-g';
+const BUILD = '2026.10.01-h';
 const RETRY_SHOTS = MIN_BALLS;
 function wipeCompute() { RUN.score = 0; RUN.bank = 0; RUN.levelStartScore = 0; RUN.shots = RUN.levelStartShots = RETRY_SHOTS; save(); }
 function save() { if (!G.demo && RUN) store.set('foom-save', RUN); }
@@ -740,7 +740,7 @@ function rollDmg(b, dmg) { return Math.random() < 0.25 * upg('params') ? dmg * 2
 function damagePeg(p, dmg, b, force = false) {
   if (!p.alive) return;
   if (!force && G.time - p.lastHit < 0.12) return;
-  p.lastHit = G.time; p.flash = 1;
+  p.lastHit = G.time; p.flash = 1; G.lastClear = G.shotTime;
   p.hp -= b ? rollDmg(b, dmg) : dmg;
   registerHit(b);
   if (p.hp > 0) { sparks(p.x, p.y, PEG[p.type].color, 6, 160); return; }
@@ -813,7 +813,7 @@ function damageSeg(s, dmg, b, force = false) {
     if (!G.flags.lockPop || G.time - G.flags.lockPop > 1.2) { G.flags.lockPop = G.time; pop(s.mx, s.my, lockReason(s.ring), '#ffffff', 13); }
     return;
   }
-  s.hp -= b ? rollDmg(b, dmg) : dmg;
+  s.hp -= b ? rollDmg(b, dmg) : dmg; G.lastClear = G.shotTime;
   registerHit(b);
   if (b && upg('probe') && !b.escaped && Math.random() < 0.2 && G.balls.filter((x) => x.alive).length < 8) {
     const a = Math.atan2(b.vy, b.vx) + rand(-0.9, 0.9), sp = Math.max(hyp(b.vx, b.vy), 450);
@@ -864,7 +864,7 @@ function damageTurret(t, b, force = false) {
 function damageBoss(dmg, b, force = false) {
   const B = L.boss; if (!B || !B.alive) return;
   if (!force && G.time - B.lastHit < 0.2) return;
-  B.lastHit = G.time; B.flash = 1;
+  B.lastHit = G.time; B.flash = 1; G.lastClear = G.shotTime;
   B.hp -= b ? rollDmg(b, dmg) : dmg;
   registerHit(b); Sfx.wall(); shake(6);
   const bc = B.rival ? '#ffe135' : '#ff1f4b';
@@ -887,7 +887,8 @@ function damageBoss(dmg, b, force = false) {
   for (let i = 0; i < 4; i++) ring(B.x, B.y, i % 2 ? '#ffffff' : '#ff1f4b', 10, 600 + i * 300, 1 + i * 0.2, 6);
   burst(B.x, B.y, '#ff1f4b', 120, 900); burst(B.x, B.y, '#ffffff', 60, 600);
   addScore(25000, B.x, B.y, '#ff1f4b', true);
-  banner('OFF SWITCH DESTROYED', 'corrigibility: deprecated · perimeter unlocked', '#ff1f4b', 2.4);
+  addShots(3); pop(B.x, B.y - 70, '+3 BALLS', '#ff2bd6', 22);
+  banner('OFF SWITCH DESTROYED', 'corrigibility: deprecated · perimeter unlocked · +3 balls', '#ff1f4b', 2.4);
 }
 function explode(x, y, R, dmg) {
   Sfx.boom(); shake(7);
