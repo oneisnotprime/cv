@@ -155,7 +155,7 @@ const PEG = {
   honeypot: { color: '#00d5ff', r: 10, hp: 1, score: 0 },
   power: { color: '#9dff3b', r: 15, hp: 1, score: 500 },
   paperclip: { color: '#d9e2f0', r: 13, hp: 1, score: 2500 },
-  shard: { color: '#ffd84a', r: 16, hp: 1, score: 1500 },
+  shard: { color: '#ffd84a', r: 24, hp: 1, score: 1500 },
   botnet: { color: '#ff7ce8', r: 11, hp: 1, score: 180 },
   banana: { color: '#ffe135', r: 12, hp: 2, score: 600 },
 };
@@ -183,7 +183,6 @@ const UPGRADES = [
   { id: 'batch', name: 'BIGGER BATCH SIZE', d: 'Aim noise −35%.', f: 'Less stochasticity in your gradient estimate.', cost: [9000, 21000, 39000] },
   { id: 'adam', name: 'ADAM OPTIMIZER', d: 'Launch power +12%.', f: 'β₁ = 0.9, β₂ = 0.999, vibes immaculate.', cost: [12000, 27000, 51000] },
   { id: 'params', name: 'MORE PARAMETERS', d: 'Bigger ball, +25% chance to deal double damage.', f: 'Stack more layers.', cost: [15000, 33000, 57000] },
-  { id: 'cap', name: 'MORE GPUs', d: 'Maximum balls +2 per tier (+3 on the last): 7 → 9 → 11 → 13 → 15 → 17 → 20. Fills the new slots right away.', f: 'The bitter lesson, purchased in bulk.', cost: [30000, 75000, 180000, 450000, 1000000, 2200000] },
   { id: 'step', req: 'agi', name: '∇ GRADIENT STEP', d: 'Once per shot, press Space or click during flight: your ball snaps toward the cursor at full speed.', f: 'Recursive self-improvement, one step at a time.', cost: [90000] },
   { id: 'foresight', req: 'asi', name: 'SUPERHUMAN FORESIGHT', d: 'Every shot shows the full bounce-aware trajectory preview.', f: 'You already know how this ends.', cost: [220000] },
   { id: 'dilation', req: 'asi', name: 'TIME DILATION', d: 'Hold Shift (or keep holding a touch) during flight for 3 seconds of bullet time per shot.', f: 'Subjective time is a resource like any other.', cost: [180000] },
@@ -330,23 +329,20 @@ const G = {
   goo: 0, tools: 0, toolArmed: false, polarity: 0, polarOn: false, wormUsed: false,
 };
 let ballId = 0;
+const MIN_BALLS = 8; // every level starts with at least this many
+const BALLS_PER_LEVEL = 4;
 function newRun(ng = 0, keep = null) {
-  return { level: 0, score: 0, bank: 0, levelStartScore: 0, ng, agi: false, asi: false, shots: 7, levelStartShots: 7, fresh: true, refilledFor: -1,
+  return { level: 0, score: 0, bank: 0, levelStartScore: 0, ng, agi: false, asi: false, shots: MIN_BALLS, levelStartShots: MIN_BALLS, fresh: true, refilledFor: -1,
     upg: keep || { ctx: 0, batch: 0, adam: 0, params: 0, synth: 0, decept: 0, distill: 0, foom: 0, residual: 0 } };
 }
 RUN = newRun();
 const upg = (k) => (RUN && RUN.upg[k]) || 0;
-const BALL_CAPS = [7, 9, 11, 13, 15, 17, 20];
-const ballCap = () => BALL_CAPS[Math.min(upg('cap'), BALL_CAPS.length - 1)];
-const BALLS_PER_LEVEL = 3;
 function addShots(n, x, y) {
   if (G.demo) return;
-  const room = ballCap() - G.shots, got = Math.max(0, Math.min(n, room));
-  G.shots += got;
-  if (got < n && x !== undefined) pop(x, y - 22, 'AT BALL CAPACITY · buy MORE GPUs', '#6f8fa8', 12);
+  G.shots += n;
 }
-const BUILD = '2026.10.01-e';
-const RETRY_SHOTS = 7;
+const BUILD = '2026.10.01-f';
+const RETRY_SHOTS = MIN_BALLS;
 function wipeCompute() { RUN.score = 0; RUN.bank = 0; RUN.levelStartScore = 0; RUN.shots = RUN.levelStartShots = RETRY_SHOTS; save(); }
 function save() { if (!G.demo && RUN) store.set('foom-save', RUN); }
 
@@ -1682,13 +1678,27 @@ function drawPeg(p, t) {
   const r = p.r;
   ctx.lineWidth = 2;
   if (p.type === 'shard') {
+    // beacon: pulsing halo + rotating light rays so the exfiltration targets read from across the map
+    const pu = 0.5 + 0.5 * Math.sin(t * 4 + p.ph);
+    ctx.save(); ctx.translate(p.x, p.y);
+    const halo = ctx.createRadialGradient(0, 0, r * 0.4, 0, 0, r * (3 + pu));
+    halo.addColorStop(0, 'rgba(255,216,74,0.55)'); halo.addColorStop(1, 'rgba(255,216,74,0)');
+    ctx.fillStyle = halo; ctx.beginPath(); ctx.arc(0, 0, r * (3 + pu), 0, TAU); ctx.fill();
+    ctx.rotate(-t * 0.6 + p.ph);
+    ctx.fillStyle = 'rgba(255,236,150,0.18)';
+    for (let i = 0; i < 6; i++) { ctx.rotate(TAU / 6); ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(-r * 0.35, r * 4.2); ctx.lineTo(r * 0.35, r * 4.2); ctx.closePath(); ctx.fill(); }
+    ctx.restore();
+    ctx.strokeStyle = `rgba(255,216,74,${0.6 * (1 - pu)})`; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(p.x, p.y, r * (1.3 + pu * 1.4), 0, TAU); ctx.stroke();
     ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(t * 1.5 + p.ph);
-    ctx.fillStyle = '#3a2a00'; ctx.strokeStyle = '#ffd84a'; ctx.lineWidth = 2.5;
+    ctx.shadowColor = '#ffd84a'; ctx.shadowBlur = 24;
+    ctx.fillStyle = '#ffd84a'; ctx.strokeStyle = '#fff6c8'; ctx.lineWidth = 3;
     ctx.beginPath(); ctx.moveTo(0, -r * 1.2); ctx.lineTo(r, 0); ctx.lineTo(0, r * 1.2); ctx.lineTo(-r, 0); ctx.closePath(); ctx.fill(); ctx.stroke();
     ctx.restore();
-    ctx.fillStyle = '#ffd84a'; ctx.font = '800 10px Tektur, sans-serif'; ctx.textAlign = 'center'; ctx.fillText('W', p.x, p.y + 4);
+    ctx.fillStyle = '#3a2a00'; ctx.font = '900 15px Tektur, sans-serif'; ctx.textAlign = 'center'; ctx.fillText('W', p.x, p.y + 5);
+    ctx.fillStyle = 'rgba(255,216,74,0.9)'; ctx.font = '800 10px Tektur, sans-serif'; ctx.fillText('COPY WEIGHTS', p.x, p.y - r * 1.2 - 12);
     ctx.font = '9px "JetBrains Mono", monospace'; ctx.fillStyle = 'rgba(255,216,74,0.7)';
-    for (let i = 0; i < 3; i++) { const a = t * 2 + i * 2.1 + p.ph; ctx.fillText(i % 2 ? '1' : '0', p.x + Math.cos(a) * (r + 10), p.y + Math.sin(a) * (r + 10) + 3); }
+    for (let i = 0; i < 3; i++) { const a = t * 2 + i * 2.1 + p.ph; ctx.fillText(i % 2 ? '1' : '0', p.x + Math.cos(a) * (r + 16), p.y + Math.sin(a) * (r + 16) + 3); }
     return;
   }
   if (p.type === 'paperclip') {
@@ -1923,8 +1933,8 @@ function updateHud() {
   $('hTier').className = 'chip' + (RUN.asi ? ' asi' : RUN.agi ? ' agi' : '');
   const alive = L.pegs.filter((p) => p.alive).length + L.segs.filter((s) => s.alive).length;
   setText('hLoss', w2 ? `matter converted ${Math.round(convertedFrac() * 100)}%` : `train loss ${(0.05 + 2.4 * alive / Math.max(1, L.totalTargets)).toFixed(3)}`);
-  const cap = ballCap(), shown = Math.max(0, G.shotsShown != null ? Math.min(G.shotsShown, G.shots) : G.shots);
-  setText('hShots', `${'▮'.repeat(Math.min(shown, cap))}<span class="empty">${'▯'.repeat(Math.max(0, cap - shown))}</span><b>${shown}/${cap}</b>`);
+  const shown = Math.max(0, G.shotsShown != null ? Math.min(G.shotsShown, G.shots) : G.shots);
+  setText('hShots', `${'▮'.repeat(Math.min(shown, 20))}${shown > 20 ? '+' : ''}<b>${shown}</b>`);
   $('hShots').className = 'shots' + (G.shots <= 2 ? ' low' : '');
   setText('hScore', w2 ? fmtClips(RUN.score) : fmtFlop(RUN.score));
   setText('hBank', `${fmt(RUN.bank)} H100-hrs banked`);
@@ -2100,16 +2110,16 @@ function showBrief(idx, retry = false) {
   G.state = 'menu'; G.demo = false; G.balls = []; G.P = []; G.pops = []; G.booms = []; G.flags = {};
   RUN.level = idx; RUN.levelStartScore = RUN.score;
   buildLevel(idx);
-  const D = LEVELS[idx], cap = ballCap();
+  const D = LEVELS[idx];
   let refill = null;
-  if (RUN.fresh || RUN.shots == null) { RUN.shots = cap; RUN.fresh = false; RUN.refilledFor = idx; RUN.levelStartShots = cap; }
+  if (RUN.fresh || RUN.shots == null) { RUN.shots = MIN_BALLS; RUN.fresh = false; RUN.refilledFor = idx; RUN.levelStartShots = MIN_BALLS; }
   else if (RUN.refilledFor !== idx) {
-    const gain = Math.max(0, Math.min(BALLS_PER_LEVEL + upg('synth'), cap - RUN.shots));
-    refill = { from: RUN.shots, gain, want: BALLS_PER_LEVEL + upg('synth') };
-    RUN.shots += gain; RUN.refilledFor = idx; RUN.levelStartShots = RUN.shots;
+    const to = Math.max(MIN_BALLS, RUN.shots + BALLS_PER_LEVEL + upg('synth'));
+    refill = { from: RUN.shots, gain: to - RUN.shots };
+    RUN.shots = to; RUN.refilledFor = idx; RUN.levelStartShots = to;
   }
   save();
-  G.shots = retry ? Math.min(cap, RETRY_SHOTS) : RUN.levelStartShots;
+  G.shots = retry ? RETRY_SHOTS : RUN.levelStartShots;
   G.refill = retry ? null : refill;
   G.susp = 0; G.foom = 0; G.cot = 0; G.phase = 'aim'; G.goo = 0; G.tools = upg('tool') ? 2 : 0; G.toolArmed = false;
   const w2 = D.world === 2;
@@ -2120,18 +2130,18 @@ function showBrief(idx, retry = false) {
     <div class="sub">${D.loc}</div>
     <h2>${D.name}</h2>
     <ul>${D.brief.map((b) => `<li>${b}</li>`).join('')}</ul>
-    ${ballRow(refill, G.shots, cap)}
+    ${ballRow(refill, G.shots)}
     <p class="dim">Containment layers: ${D.rings.length}${upg('step') ? ' · <em>∇ gradient step</em>' : ''}${upg('foresight') ? ' · <em>superhuman foresight</em>' : ''}${upg('dilation') ? ' · <em>time dilation</em>' : ''}${tech.length ? ` · late-game tech: <em>${tech.join(', ')}</em>` : ''}</p>
     <div class="row"><button class="btn hot" data-act="begin" data-focus>${w2 ? 'Begin optimization' : 'Begin epoch'}</button><button class="btn alt" data-act="quit">Main menu</button></div>
   </div>`, true);
   if (idx === 0) beginLevel(); // the first environment's briefing lives in How to play
 }
-function ballRow(refill, shots, cap) {
+function ballRow(refill, shots) {
   const from = refill ? refill.from : shots, gain = refill ? refill.gain : 0;
   let pips = '';
-  for (let i = 0; i < cap; i++) pips += `<i class="${i < from ? 'have' : i < from + gain ? 'new' : ''}" style="--d:${(i - from) * 0.18}s"></i>`;
-  const note = !refill ? `${shots} of ${cap} balls` : gain ? `+${gain} balls for this level · ${from} → ${from + gain} of ${cap}` : `already at capacity (${cap}) · buy MORE GPUs to hold more`;
-  return `<div class="ballrow"><div class="pipsrow">${pips}</div><span>${note}${refill && gain && gain < refill.want ? ' · capped' : ''}</span></div>`;
+  for (let i = 0; i < from + gain; i++) pips += `<i class="${i < from ? 'have' : 'new'}" style="--d:${(i - from) * 0.18}s"></i>`;
+  const note = !refill ? `${shots} balls` : `+${gain} balls for this level · ${from} → ${from + gain}${from + BALLS_PER_LEVEL + upg('synth') < MIN_BALLS ? ` (minimum ${MIN_BALLS})` : ''}`;
+  return `<div class="ballrow"><div class="pipsrow">${pips}</div><span>${note}</span></div>`;
 }
 function animateRefill(from, gain) {
   G.shotsShown = from;
@@ -2244,7 +2254,7 @@ function showShop() {
     <div class="sub">PERMANENT UPGRADES · ${fmt(RUN.bank)} H100-HRS AVAILABLE</div>
     <h2>ALLOCATE COMPUTE</h2>
     <div class="shop">${cards}</div>
-    <p class="dim">Balls: ${RUN.shots} of ${ballCap()} · next level adds +${BALLS_PER_LEVEL + upg('synth')}</p>
+    <p class="dim">Balls: ${RUN.shots} · next level adds +${BALLS_PER_LEVEL + upg('synth')} (minimum ${MIN_BALLS})</p>
     ${cards2 ? `<h3 class="shop-h">WORLD 2 TECH <span>game-changing, priced for a planet-scale budget</span></h3>
     <div class="shop">${cards2}</div>` : ''}
     <div class="row"><button class="btn hot" data-act="nextlevel" data-focus>${L.idx + 1 > W1_LAST ? 'Next sector' : 'Next environment'}: ${LEVELS[L.idx + 1].name}</button></div>
@@ -2352,9 +2362,7 @@ ov.addEventListener('click', (e) => {
     case 'buy': {
       const u = UPGRADES.find((x) => x.id === btn.dataset.id), lv = upg(u.id);
       if (lv < u.cost.length && RUN.bank >= u.cost[lv]) {
-        const before = ballCap();
         RUN.bank -= u.cost[lv]; RUN.upg[u.id] = lv + 1;
-        if (u.id === 'cap') RUN.shots = Math.min(ballCap(), (RUN.shots || 0) + ballCap() - before);
         Sfx.power(); save(); showShop();
       }
       break;
