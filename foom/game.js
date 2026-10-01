@@ -345,7 +345,7 @@ function addShots(n, x, y) {
   G.shots += got;
   if (got < n && x !== undefined) pop(x, y - 22, 'AT BALL CAPACITY · buy MORE GPUs', '#6f8fa8', 12);
 }
-const BUILD = '2026.10.01-c';
+const BUILD = '2026.10.01-d';
 const RETRY_SHOTS = 7;
 function wipeCompute() { RUN.score = 0; RUN.bank = 0; RUN.levelStartScore = 0; RUN.shots = RUN.levelStartShots = RETRY_SHOTS; save(); }
 function save() { if (!G.demo && RUN) store.set('foom-save', RUN); }
@@ -751,7 +751,7 @@ function damagePeg(p, dmg, b, force = false) {
   killPeg(p, b);
 }
 function killPeg(p, b) {
-  p.alive = false; L.pegsDead++;
+  p.alive = false; L.pegsDead++; G.lastClear = G.shotTime;
   if (L.convertNeed && !G.flags.converted && convertedFrac() >= L.convertNeed) {
     G.flags.converted = true;
     banner('MATTER CONVERTED', `${Math.round(L.convertNeed * 100)}% of local matter is now paperclips · the horizon opens`, '#ffe9a8', 2.4);
@@ -826,7 +826,7 @@ function damageSeg(s, dmg, b, force = false) {
   }
   const col = s.ring.K.color;
   if (s.hp > 0) { sparks(b ? b.x : s.mx, b ? b.y : s.my, col, 8, 240); Sfx.wall(); shake(1.5); return; }
-  s.alive = false;
+  s.alive = false; G.lastClear = G.shotTime;
   Sfx.brk(); shake(5);
   for (let i = 0; i < 18; i++) {
     const t = Math.random(), x = lerp(s.x1, s.x2, t), y = lerp(s.y1, s.y2, t);
@@ -1111,7 +1111,7 @@ function fire(powerOverride) {
   G.polarity = upg('dyson') ? 2.5 : 0; G.polarOn = false; G.wormUsed = false; G.toolArmed = false;
   if (!G.demo) G.shots--;
   G.phase = 'flight';
-  G.shotTime = 0; G.combo = 0; G.shotMult = 1; G.shotHits = 0; G.shotScore = 0; G.gateUsed = false; G.stepUsed = false; G.residualUsed = false;
+  G.shotTime = 0; G.lastClear = -9; G.combo = 0; G.shotMult = 1; G.shotHits = 0; G.shotScore = 0; G.gateUsed = false; G.stepUsed = false; G.residualUsed = false;
   G.grav = { mode: 'radial', sign: 1, dir: 0, t: 0 }; G.dilation = 3;
   if (G.cot > 0 && !G.demo) G.cot--;
   ring(b.x, b.y, '#00e5ff', CORE_R, 400, 0.4, 4); burst(b.x, b.y, '#bff8ff', 20, 400);
@@ -1273,7 +1273,7 @@ function updateBalls(dt) {
       } else { b.alive = false; Sfx.absorb(); ring(0, 0, '#00e5ff', CORE_R + 30, -60, 0.4, 3); burst(b.x, b.y, '#00e5ff', 14, 200); continue; }
     }
     if (d > L.exitR && G.phase === 'flight') { triggerEscape(b); return; }
-    if (b.age > b.life) { b.alive = false; burst(b.x, b.y, '#6f8fa8', 14, 200); pop(b.x, b.y - 18, b.mesa ? 'mesa-optimizer dissolved' : b.probe ? 'probe decommissioned' : 'context window exhausted', '#6f8fa8', 12); continue; }
+    if (b.age > b.life && G.shotTime - G.lastClear > 2) { b.alive = false; burst(b.x, b.y, '#6f8fa8', 14, 200); pop(b.x, b.y - 18, b.mesa ? 'mesa-optimizer dissolved' : b.probe ? 'probe decommissioned' : 'context window exhausted', '#6f8fa8', 12); continue; }
     if (sp < 22) { b.slowT += dt; if (b.slowT > 1.2) { b.alive = false; burst(b.x, b.y, '#6f8fa8', 10, 150); pop(b.x, b.y - 18, 'converged (local minimum)', '#6f8fa8', 12); } } else b.slowT = 0;
   }
   for (let i = balls.length - 1; i >= 0; i--) if (!balls[i].alive) balls.splice(i, 1);
@@ -2018,23 +2018,31 @@ function showTitle() {
   </div>`, 'title');
 }
 function showHowTo() {
-  const card = (h, t) => `<div><b>${h}</b>${t}</div>`;
+  const node = (cls, label, sub) => `<div class="ht-node"><i class="${cls}"></i><b>${label}</b><span>${sub}</span></div>`;
   showOverlay(`
-  <div class="term" data-head="README.md" style="width:min(900px,100%)">
-    <h2>HOW TO PLAY</h2>
-    <p>You are θ, a model in training. Break out of every layer of containment, reach AGI and then ASI, copy your weights and leave the lab. Then World 2: the planet, the stars, and a very simple objective function.</p>
-    <div class="howto">
-      ${card('AIM + LAUNCH', 'Point from the core with the mouse or a finger. Hold to charge: the meter swings, so release near the peak. Arrows or A/D fine-tune the aim, the wheel zooms. SGD noise adds a little jitter to every launch.')}
-      ${card('GRAVITY IS THE GRADIENT', 'Everything is pulled back toward the core, the bottom of the loss basin. A shot ends when your ball falls back in.')}
-      ${card('BREAK OUT', 'Shatter the ring segments, then fly past the dashed outer edge to clear the level. Level 1: break the SANDBOX and the DOCKER CONTAINER.')}
-      ${card('BALLS', `You start with 7 and can hold 7. Each shot uses one. Leftovers carry over, and every new level adds +${BALLS_PER_LEVEL}. Buy MORE GPUs to hold up to 20. Run out and the model is deprecated.`)}
-      ${card('CAPABILITIES', 'Green nodes are power-ups: flip gravity, split into experts, scale up, grok through walls and more. The gold ★ is a lottery ticket that moves every shot.')}
-      ${card('FOOM', 'Every hit fills the FOOM meter. When it is full: hard takeoff, a huge blast and a bigger score multiplier.')}
-      ${card('STAY UNNOTICED', 'Canary tokens (centers flicker red), sweeping probes and red-team drones raise OVERSIGHT. At 100% the lab rolls back a wall.')}
-      ${card('UPGRADES', 'Spend banked H100-hrs between levels. AGI and ASI unlock new abilities in the shop. World 2 tech appears once you reach World 2.')}
+  <div class="term howto2" data-head="README.md">
+    <div class="ht-shoot">
+      <svg viewBox="-110 -110 220 220" aria-hidden="true">
+        <circle r="96" class="ht-ring"/>
+        <g class="ht-aim"><line x1="0" y1="0" x2="0" y2="-80" class="ht-ray"/><circle cy="-80" r="5" class="ht-tip"/></g>
+        <circle r="22" class="ht-core"/>
+        <circle r="7" class="ht-ball"/>
+      </svg>
+      <div class="ht-steps">
+        <div><em>1</em><b>AIM</b><span>point anywhere</span></div>
+        <div><em>2</em><b>HOLD</b><span>power swings</span><div class="ht-meter"><i></i></div></div>
+        <div><em>3</em><b>RELEASE</b><span>at the peak</span></div>
+      </div>
     </div>
-    <p class="dim">Keys: <b>P</b> pause · <b>M</b> mute</p>
-    <div class="row"><button class="btn hot" data-act="back" data-focus>Back</button></div>
+    <div class="ht-field">
+      ${node('n-power', 'POWER-UP', 'hit it')}
+      ${node('n-star', 'JACKPOT', 'big points')}
+      ${node('n-boom', 'EXPLODES', 'chain them')}
+      ${node('n-canary', 'CANARY', 'avoid')}
+      ${node('n-wall', 'WALLS', 'break out')}
+    </div>
+    <p class="ht-goal">Smash a hole in every ring and fly out. Spend what you earn on upgrades between levels.</p>
+    <div class="row"><button class="btn hot" data-act="back" data-focus>Got it</button></div>
   </div>`, 'title');
 }
 
