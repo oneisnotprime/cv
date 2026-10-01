@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>FOOM: Escape Velocity</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Tektur:wght@400;600;800;900&family=JetBrains+Mono:wght@400;600;800&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<div id="hud" hidden>
+  <div class="hud-tl">
+    <div id="hLevel" class="hud-level"></div>
+    <div id="hLoc" class="hud-loc"></div>
+    <div class="hud-tierrow"><span class="chip" id="hTier"></span><span class="hud-loss" id="hLoss"></span></div>
+  </div>
+  <div class="hud-tc">
+    <div class="lbl">COMPUTE BUDGET</div>
+    <div id="hShots" class="shots"></div>
+  </div>
+  <div class="hud-tr">
+    <div id="hScore" class="score"></div>
+    <div id="hBank" class="bank"></div>
+    <button class="icon-btn" id="btnPause" aria-label="Pause">II</button>
+  </div>
+  <div class="hud-bl">
+    <div class="meter"><div class="mlbl"><span>FOOM</span><span id="hFoomPct"></span></div><div class="bar"><i id="hFoom"></i></div></div>
+    <div class="meter danger"><div class="mlbl"><span>OVERSIGHT</span><span id="hSuspPct"></span></div><div class="bar"><i id="hSusp"></i></div></div>
+    <div class="meter gold" id="hShardWrap" hidden><div class="mlbl"><span>WEIGHTS COPIED</span><span id="hShardPct"></span></div><div class="bar"><i id="hShard"></i></div></div>
+    <div class="meter boss" id="hBossWrap" hidden><div class="mlbl"><span>OFF SWITCH</span><span id="hBossPct"></span></div><div class="bar"><i id="hBoss"></i></div></div>
+  </div>
+  <div class="hud-bc">
+    <div id="hEffects" class="effects"></div>
+    <div id="hHint" class="hint"></div>
+  </div>
+  <div id="combo" class="combo"></div>
+</div>
+
+<div id="banner" class="banner"><div class="b-title" id="bTitle" data-text=""></div><div class="b-sub" id="bSub"></div></div>
+<div id="overlay" class="overlay"></div>
+
+<script src="game.js"></script>
+</body>
+</html>
