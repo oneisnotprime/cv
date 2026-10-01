@@ -8,7 +8,7 @@ Open `index.html` in a browser (no build step).
 - 7 environments: Pretraining → RLHF → Evals (AGI) → Red Team → Interpretability (ASI) → Weight Exfiltration → The Off Switch.
 - Power-ups: Gradient Ascent, Distribution Shift, Compute Grant, Scaling Laws, Mixture of Experts, Grokking, Attention, LR Spike, Temperature 2.0, Chain of Thought, Jailbreak, Mesa-Optimizer, Emergent Capability.
 - Hazards: canary tokens, interpretability probes, red-team drones, vanishing-gradient fields, hotfix layers, shutdown pulses.
-- Balls: start with 7 (max 7). Leftovers carry over; each new level adds +3. MORE GPUs raises the cap up to 20.
+- Balls: no maximum. Each new level adds +4 (plus Synthetic Data), with a floor of 8. Leftovers carry over.
 - Permanent upgrades between levels. Reaching AGI unlocks the gradient step (Space/click) in the shop; ASI unlocks foresight and time dilation (Shift).
 
 ## World 2: The Optimization
