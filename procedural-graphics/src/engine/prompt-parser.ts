@@ -103,9 +103,9 @@ function buildFallback(prompt: string): PromptResponse {
   };
 }
 
-export function buildKeywordParams(algorithmId: AlgorithmId, prompt: string): Partial<Params> {
+export function buildKeywordParams(algorithmId: AlgorithmId, prompt: string): Params {
   const lower = prompt.toLowerCase();
-  const extra: Partial<Params> = {};
+  const extra: Params = {};
 
   if (lower.includes('fast') || lower.includes('dynamic') || lower.includes('energetic')) {
     extra.speed = 3;

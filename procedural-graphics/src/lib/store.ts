@@ -7,7 +7,7 @@ import { PRESET_PALETTES } from '@/engine/palettes';
 
 interface GeneratorStore extends GeneratorState {
   setAlgorithm: (id: AlgorithmId) => void;
-  setParams: (params: Partial<Params>) => void;
+  setParams: (params: Params) => void;
   setPalette: (palette: string[]) => void;
   setSeed: (seed: number) => void;
   randomizeSeed: () => void;
