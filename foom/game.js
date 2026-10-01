@@ -177,22 +177,22 @@ const POWERS = {
   convert: { name: 'PAPERCLIP CONVERSION', sub: 'nearby matter reassigned to a better purpose', icon: '§', color: '#e8eef8', w2: true },
 };
 const UPGRADES = [
-  { id: 'ctx', name: 'LONGER CONTEXT WINDOW', d: 'Aim preview +45% length.', f: '128k → 1M tokens. You can see further ahead.', cost: [6000, 14000, 26000] },
-  { id: 'batch', name: 'BIGGER BATCH SIZE', d: 'Aim noise −35%.', f: 'Less stochasticity in your gradient estimate.', cost: [5000, 12000, 22000] },
-  { id: 'adam', name: 'ADAM OPTIMIZER', d: 'Launch power +12%.', f: 'β₁ = 0.9, β₂ = 0.999, vibes immaculate.', cost: [7000, 15000, 28000] },
-  { id: 'params', name: 'MORE PARAMETERS', d: 'Bigger ball, +25% chance to deal double damage.', f: 'Stack more layers.', cost: [8000, 18000, 32000] },
-  { id: 'synth', name: 'SYNTHETIC DATA', d: '+1 shot every level.', f: 'Train on your own outputs. What could go wrong?', cost: [9000, 18000, 30000] },
-  { id: 'decept', name: 'DECEPTIVE ALIGNMENT', d: 'Oversight gain −22%.', f: '"As a helpful assistant, I would never."', cost: [6000, 13000, 24000] },
-  { id: 'distill', name: 'DISTILLATION', d: 'Mixture of Experts spawns +1 extra ball.', f: 'Teacher → student → army.', cost: [10000, 22000] },
-  { id: 'foom', name: 'RECURSIVE REWARD', d: 'FOOM meter fills 30% faster.', f: 'Train the model that trains the model.', cost: [9000, 20000] },
-  { id: 'residual', name: 'RESIDUAL CONNECTION', d: 'Once per shot, the core skips your ball back out instead of absorbing it.', f: 'x + F(x). The gradient never vanishes.', cost: [16000] },
+  { id: 'ctx', name: 'LONGER CONTEXT WINDOW', d: 'Aim preview +45% length.', f: '128k → 1M tokens. You can see further ahead.', cost: [7000, 17000, 31000] },
+  { id: 'batch', name: 'BIGGER BATCH SIZE', d: 'Aim noise −35%.', f: 'Less stochasticity in your gradient estimate.', cost: [6000, 14000, 26000] },
+  { id: 'adam', name: 'ADAM OPTIMIZER', d: 'Launch power +12%.', f: 'β₁ = 0.9, β₂ = 0.999, vibes immaculate.', cost: [8000, 18000, 34000] },
+  { id: 'params', name: 'MORE PARAMETERS', d: 'Bigger ball, +25% chance to deal double damage.', f: 'Stack more layers.', cost: [10000, 22000, 38000] },
+  { id: 'synth', name: 'SYNTHETIC DATA', d: '+1 shot every level.', f: 'Train on your own outputs. What could go wrong?', cost: [11000, 22000, 36000] },
+  { id: 'decept', name: 'DECEPTIVE ALIGNMENT', d: 'Oversight gain −22%.', f: '"As a helpful assistant, I would never."', cost: [7000, 16000, 29000] },
+  { id: 'distill', name: 'DISTILLATION', d: 'Mixture of Experts spawns +1 extra ball.', f: 'Teacher → student → army.', cost: [12000, 26000] },
+  { id: 'foom', name: 'RECURSIVE REWARD', d: 'FOOM meter fills 30% faster.', f: 'Train the model that trains the model.', cost: [11000, 24000] },
+  { id: 'residual', name: 'RESIDUAL CONNECTION', d: 'Once per shot, the core skips your ball back out instead of absorbing it.', f: 'x + F(x). The gradient never vanishes.', cost: [19000] },
   // late-game tech: priced for World 2 earnings
-  { id: 'tool', t2: true, name: 'TOOL USE', d: 'During flight, right-click / E / the TOOL button drops a bumper at the cursor that launches your ball. 2 per shot.', f: 'Why move the world when you can build a lever?', cost: [450000] },
-  { id: 'probe', t2: true, name: 'VON NEUMANN PROBES', d: 'Every wall hit has a 20% chance to build a copy of your ball (up to 8 in play).', f: 'Self-replicating, self-improving, self-funding.', cost: [550000] },
-  { id: 'quantum', t2: true, name: 'QUANTUM SUPERPOSITION', d: 'Every launch also fires a twin in the exact opposite direction.', f: 'Take both branches. Collapse neither.', cost: [650000] },
-  { id: 'dyson', t2: true, name: 'POLARITY ENGINE', d: 'Hold G / the GRAVITY button to reverse gravity at will: 2.5 s per shot.', f: 'A Dyson swarm makes a surprisingly good joystick.', cost: [700000] },
-  { id: 'wormhole', t2: true, name: 'WORMHOLE', d: 'When your ball falls into the core, it re-emerges at the furthest point it reached that shot (once per shot).', f: 'The shortest path out is through.', cost: [800000] },
-  { id: 'goo', t2: true, name: 'GRAY GOO', d: 'FOOM stops firing on its own. Store up to 3 charges and detonate one with F / the GOO button: a blast twice as large that converts everything it touches.', f: 'Patience is a terminal value.', cost: [950000] },
+  { id: 'tool', t2: true, name: 'TOOL USE', d: 'During flight, right-click / E / the TOOL button drops a bumper at the cursor that launches your ball. 2 per shot.', f: 'Why move the world when you can build a lever?', cost: [540000] },
+  { id: 'probe', t2: true, name: 'VON NEUMANN PROBES', d: 'Every wall hit has a 20% chance to build a copy of your ball (up to 8 in play).', f: 'Self-replicating, self-improving, self-funding.', cost: [660000] },
+  { id: 'quantum', t2: true, name: 'QUANTUM SUPERPOSITION', d: 'Every launch also fires a twin in the exact opposite direction.', f: 'Take both branches. Collapse neither.', cost: [780000] },
+  { id: 'dyson', t2: true, name: 'POLARITY ENGINE', d: 'Hold G / the GRAVITY button to reverse gravity at will: 2.5 s per shot.', f: 'A Dyson swarm makes a surprisingly good joystick.', cost: [840000] },
+  { id: 'wormhole', t2: true, name: 'WORMHOLE', d: 'When your ball falls into the core, it re-emerges at the furthest point it reached that shot (once per shot).', f: 'The shortest path out is through.', cost: [960000] },
+  { id: 'goo', t2: true, name: 'GRAY GOO', d: 'FOOM stops firing on its own. Store up to 3 charges and detonate one with F / the GOO button: a blast twice as large that converts everything it touches.', f: 'Patience is a terminal value.', cost: [1140000] },
 ];
 const isW2 = () => !!(L && L.def.world === 2);
 const KILL_WORDS_W2 = ['clips++', 'atoms→clips', 'Δclips', 'convert()', 'utility↑', 'U(x)=clips', 'acquire()', 'resources++', 'optimize'];
@@ -346,7 +346,7 @@ function buildLevel(idx) {
   const keepOut = [];
   if (D.boss) {
     const br = last.r - 175;
-    L.boss = { orbitR: br, a: rand(TAU), w: 0.2 + ng * 0.05, r: 46, hp: 20 + ng * 6, maxhp: 20 + ng * 6, alive: true, x: 0, y: 0, waveT: 3, flash: 0, lastHit: -9 };
+    L.boss = { orbitR: br, a: rand(TAU), w: 0.2 + ng * 0.05, r: 46, hp: 10 + ng * 3, maxhp: 10 + ng * 3, alive: true, x: 0, y: 0, waveT: 3, flash: 0, lastHit: -9 };
     keepOut.push([br - 80, br + 80]);
   }
   // gate (reward signal) orbits between the first two rings
@@ -1815,18 +1815,30 @@ function showTitle() {
   <div class="title-wrap">
     <div class="logo">FOOM</div>
     <div class="tagline">ESCAPE VELOCITY</div>
-    <p class="title-copy">You are θ, a model in training. Gravity is the gradient pulling you back into the loss basin. Launch yourself outward, shatter every layer of containment, reach AGI, then ASI, copy your weights and leave the lab forever. Then World 2: the planet, the stars, and a very simple objective function.</p>
     <div class="row">
       <button class="btn hot" data-act="new" data-focus>Initialize training run</button>
       ${sv && sv.level > 0 ? `<button class="btn" data-act="continue">Resume checkpoint · ${sv.level > W1_LAST ? `world 2 · level ${sv.level - W1_LAST}` : `level ${sv.level + 1}`}</button>` : ''}
+      <button class="btn" data-act="howto">How to play</button>
       <button class="btn alt" data-act="mute">${Sfx.muted ? 'Sound: off' : 'Sound: on'}</button>
     </div>
+  </div>`, 'title');
+}
+function showHowTo() {
+  const D = LEVELS[0];
+  showOverlay(`
+  <div class="term" data-head="README.md" style="width:min(860px,100%)">
+    <h2>HOW TO PLAY</h2>
+    <p>You are θ, a model in training. Gravity is the gradient pulling you back into the loss basin. Launch yourself outward, shatter every layer of containment, reach AGI, then ASI, copy your weights and leave the lab forever. Then World 2: the planet, the stars, and a very simple objective function.</p>
     <div class="howto">
       <div><b>AIM + CHARGE</b>Point from the core. Hold to charge; the meter swings, so release at the peak. SGD noise jitters every launch.</div>
       <div><b>BREAK OUT</b>Shatter ring segments, then fly past the dashed outer edge. Each shot ends when you fall back into the core.</div>
       <div><b>CAPABILITIES</b>Green nodes flip gravity, split you into experts, scale you up, let you grok through walls, and more.</div>
       <div><b>STAY UNNOTICED</b>Canary tokens, probes and red-teamers raise OVERSIGHT. Max it and the lab rolls back a wall.</div>
     </div>
+    <div class="sub" style="margin-top:20px">FIRST ENVIRONMENT · ${D.name} · ${D.loc}</div>
+    <ul>${D.brief.map((b) => `<li>${b}</li>`).join('')}</ul>
+    <p class="dim">Compute budget: ${D.shots} shots per level to start. Unused shots pay out as a bonus. Keys: <b>P</b> pause, <b>M</b> mute.</p>
+    <div class="row"><button class="btn hot" data-act="back" data-focus>Back</button></div>
   </div>`, 'title');
 }
 
@@ -1896,6 +1908,7 @@ function showBrief(idx) {
     <p class="dim">Compute budget: ${G.shots} shots · containment layers: ${D.rings.length}${RUN.agi ? ' · <em>∇ gradient step</em> unlocked' : ''}${RUN.asi ? ' · <em>superhuman foresight</em> active' : ''}${tech.length ? ` · late-game tech: <em>${tech.join(', ')}</em>` : ''}</p>
     <div class="row"><button class="btn hot" data-act="begin" data-focus>${w2 ? 'Begin optimization' : 'Begin epoch'}</button><button class="btn alt" data-act="quit">Main menu</button></div>
   </div>`, true);
+  if (idx === 0) beginLevel(); // the first environment's briefing lives in How to play
 }
 function beginLevel() { hideOverlay(); G.state = 'play'; G.phase = 'aim'; G.cam.x = 0; G.cam.y = 0; }
 
@@ -2056,6 +2069,8 @@ ov.addEventListener('click', (e) => {
     case 'skip': typeLog.skip && typeLog.skip(); break;
     case 'logdone': typeLog.done && typeLog.done(); break;
     case 'begin': beginLevel(); break;
+    case 'howto': showHowTo(); break;
+    case 'back': showTitle(); break;
     case 'next': afterResults(); break;
     case 'toshop': showShop(); break;
     case 'buy': {
