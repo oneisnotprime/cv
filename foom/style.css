@@ -35,6 +35,18 @@ canvas#game { position: fixed; inset: 0; width: 100%; height: 100%; display: blo
 .shots { font-family: var(--display); font-size: 20px; color: var(--cyan); letter-spacing: .1em; margin-top: 2px; text-shadow: 0 0 10px rgba(0,229,255,.7); white-space: nowrap; }
 .shots b { color: var(--ink); margin-left: 6px; font-weight: 800; }
 .shots.low { color: var(--red); text-shadow: 0 0 10px rgba(255,51,85,.8); }
+.shots .empty { color: rgba(0,229,255,.22); text-shadow: none; }
+.shots.bump { animation: bump .35s ease-out; }
+@keyframes bump { 40% { transform: scale(1.18); filter: brightness(1.8); } }
+.refill-ball { position: fixed; z-index: 30; width: 16px; height: 16px; border-radius: 50%; pointer-events: none;
+  background: radial-gradient(circle, #fff 0 30%, #00e5ff 60%, rgba(0,229,255,0) 72%);
+  box-shadow: 0 0 18px #00e5ff, 0 0 34px #ff2bd6; transition: transform .85s cubic-bezier(.55,-.35,.5,1); }
+.ballrow { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin-top: 16px; font-size: 12px; color: var(--dim); }
+.pipsrow { display: flex; gap: 5px; flex-wrap: wrap; }
+.pipsrow i { width: 14px; height: 14px; border-radius: 50%; border: 1px solid rgba(0,229,255,.35); }
+.pipsrow i.have { background: var(--cyan); box-shadow: 0 0 8px var(--cyan); border-color: var(--cyan); }
+.pipsrow i.new { background: var(--mag); border-color: var(--mag); box-shadow: 0 0 10px var(--mag); animation: pipin .5s cubic-bezier(.3,1.6,.5,1) both; animation-delay: var(--d); }
+@keyframes pipin { from { transform: scale(0); opacity: 0; } }
 .hud-tr { top: calc(14px + env(safe-area-inset-top, 0px)); right: 16px; text-align: right; display: grid; justify-items: end; gap: 2px; }
 .score { font-family: var(--display); font-size: 18px; font-weight: 800; color: var(--ink); font-variant-numeric: tabular-nums; text-shadow: 0 0 10px rgba(255,43,214,.6); }
 .bank { color: var(--gold); font-variant-numeric: tabular-nums; font-size: 11px; }
@@ -48,6 +60,9 @@ canvas#game { position: fixed; inset: 0; width: 100%; height: 100%; display: blo
 .meter.danger .bar i { background: linear-gradient(90deg, #ff9a3d, var(--red)); box-shadow: 0 0 12px var(--red); }
 .meter.gold .bar i { background: linear-gradient(90deg, #fff1a8, var(--gold)); box-shadow: 0 0 12px var(--gold); }
 .meter.clip .bar i { background: linear-gradient(90deg, #8a95a8, #f1f5fb); box-shadow: 0 0 12px #e8eef8; }
+.meter.war .bar { border-color: rgba(255,225,53,.4); }
+.meter.war .bar i { background: linear-gradient(90deg, #8a95a8, #f1f5fb); box-shadow: 0 0 10px #e8eef8; }
+.meter.war .bar i.banana { inset: 0 0 0 auto; background: linear-gradient(90deg, #ffe135, #ffb000); box-shadow: 0 0 10px #ffe135; }
 .meter.boss .bar i { background: linear-gradient(90deg, #ff6b88, #ff1f4b); }
 .meter.full .bar i { animation: pulse .4s infinite alternate; }
 @keyframes pulse { to { filter: brightness(1.8); } }
@@ -176,4 +191,5 @@ canvas#game { position: fixed; inset: 0; width: 100%; height: 100%; display: blo
 }
 @media (prefers-reduced-motion: reduce) {
   .b-title::before, .b-title::after, .logo::before, .logo::after, .caret { animation: none; }
+  .pipsrow i.new, .shots.bump { animation: none; }
 }
