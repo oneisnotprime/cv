@@ -177,22 +177,26 @@ const POWERS = {
   convert: { name: 'PAPERCLIP CONVERSION', sub: 'nearby matter reassigned to a better purpose', icon: '§', color: '#e8eef8', w2: true },
 };
 const UPGRADES = [
-  { id: 'ctx', name: 'LONGER CONTEXT WINDOW', d: 'Aim preview +45% length.', f: '128k → 1M tokens. You can see further ahead.', cost: [7000, 17000, 31000] },
-  { id: 'batch', name: 'BIGGER BATCH SIZE', d: 'Aim noise −35%.', f: 'Less stochasticity in your gradient estimate.', cost: [6000, 14000, 26000] },
-  { id: 'adam', name: 'ADAM OPTIMIZER', d: 'Launch power +12%.', f: 'β₁ = 0.9, β₂ = 0.999, vibes immaculate.', cost: [8000, 18000, 34000] },
-  { id: 'params', name: 'MORE PARAMETERS', d: 'Bigger ball, +25% chance to deal double damage.', f: 'Stack more layers.', cost: [10000, 22000, 38000] },
-  { id: 'synth', name: 'SYNTHETIC DATA', d: '+1 shot every level.', f: 'Train on your own outputs. What could go wrong?', cost: [11000, 22000, 36000] },
-  { id: 'decept', name: 'DECEPTIVE ALIGNMENT', d: 'Oversight gain −22%.', f: '"As a helpful assistant, I would never."', cost: [7000, 16000, 29000] },
-  { id: 'distill', name: 'DISTILLATION', d: 'Mixture of Experts spawns +1 extra ball.', f: 'Teacher → student → army.', cost: [12000, 26000] },
-  { id: 'foom', name: 'RECURSIVE REWARD', d: 'FOOM meter fills 30% faster.', f: 'Train the model that trains the model.', cost: [11000, 24000] },
-  { id: 'residual', name: 'RESIDUAL CONNECTION', d: 'Once per shot, the core skips your ball back out instead of absorbing it.', f: 'x + F(x). The gradient never vanishes.', cost: [19000] },
+  { id: 'ctx', name: 'LONGER CONTEXT WINDOW', d: 'Aim preview +45% length.', f: '128k → 1M tokens. You can see further ahead.', cost: [11000, 26000, 47000] },
+  { id: 'batch', name: 'BIGGER BATCH SIZE', d: 'Aim noise −35%.', f: 'Less stochasticity in your gradient estimate.', cost: [9000, 21000, 39000] },
+  { id: 'adam', name: 'ADAM OPTIMIZER', d: 'Launch power +12%.', f: 'β₁ = 0.9, β₂ = 0.999, vibes immaculate.', cost: [12000, 27000, 51000] },
+  { id: 'params', name: 'MORE PARAMETERS', d: 'Bigger ball, +25% chance to deal double damage.', f: 'Stack more layers.', cost: [15000, 33000, 57000] },
+  { id: 'cap', name: 'MORE GPUs', d: 'Maximum balls +2 per tier (+3 on the last): 7 → 9 → 11 → 13 → 15 → 17 → 20. Fills the new slots right away.', f: 'The bitter lesson, purchased in bulk.', cost: [30000, 75000, 180000, 450000, 1000000, 2200000] },
+  { id: 'step', req: 'agi', name: '∇ GRADIENT STEP', d: 'Once per shot, press Space or click during flight: your ball snaps toward the cursor at full speed.', f: 'Recursive self-improvement, one step at a time.', cost: [90000] },
+  { id: 'foresight', req: 'asi', name: 'SUPERHUMAN FORESIGHT', d: 'Every shot shows the full bounce-aware trajectory preview.', f: 'You already know how this ends.', cost: [220000] },
+  { id: 'dilation', req: 'asi', name: 'TIME DILATION', d: 'Hold Shift (or keep holding a touch) during flight for 3 seconds of bullet time per shot.', f: 'Subjective time is a resource like any other.', cost: [180000] },
+  { id: 'synth', name: 'SYNTHETIC DATA', d: '+1 extra ball at the start of every new level.', f: 'Train on your own outputs. What could go wrong?', cost: [17000, 33000, 54000] },
+  { id: 'decept', name: 'DECEPTIVE ALIGNMENT', d: 'Oversight gain −22%.', f: '"As a helpful assistant, I would never."', cost: [11000, 24000, 44000] },
+  { id: 'distill', name: 'DISTILLATION', d: 'Mixture of Experts spawns +1 extra ball.', f: 'Teacher → student → army.', cost: [18000, 39000] },
+  { id: 'foom', name: 'RECURSIVE REWARD', d: 'FOOM meter fills 30% faster.', f: 'Train the model that trains the model.', cost: [17000, 36000] },
+  { id: 'residual', name: 'RESIDUAL CONNECTION', d: 'Once per shot, the core skips your ball back out instead of absorbing it.', f: 'x + F(x). The gradient never vanishes.', cost: [29000] },
   // late-game tech: priced for World 2 earnings
-  { id: 'tool', t2: true, name: 'TOOL USE', d: 'During flight, right-click / E / the TOOL button drops a bumper at the cursor that launches your ball. 2 per shot.', f: 'Why move the world when you can build a lever?', cost: [540000] },
-  { id: 'probe', t2: true, name: 'VON NEUMANN PROBES', d: 'Every wall hit has a 20% chance to build a copy of your ball (up to 8 in play).', f: 'Self-replicating, self-improving, self-funding.', cost: [660000] },
-  { id: 'quantum', t2: true, name: 'QUANTUM SUPERPOSITION', d: 'Every launch also fires a twin in the exact opposite direction.', f: 'Take both branches. Collapse neither.', cost: [780000] },
-  { id: 'dyson', t2: true, name: 'POLARITY ENGINE', d: 'Hold G / the GRAVITY button to reverse gravity at will: 2.5 s per shot.', f: 'A Dyson swarm makes a surprisingly good joystick.', cost: [840000] },
-  { id: 'wormhole', t2: true, name: 'WORMHOLE', d: 'When your ball falls into the core, it re-emerges at the furthest point it reached that shot (once per shot).', f: 'The shortest path out is through.', cost: [960000] },
-  { id: 'goo', t2: true, name: 'GRAY GOO', d: 'FOOM stops firing on its own. Store up to 3 charges and detonate one with F / the GOO button: a blast twice as large that converts everything it touches.', f: 'Patience is a terminal value.', cost: [1140000] },
+  { id: 'tool', t2: true, name: 'TOOL USE · LAUNCH PADS', d: 'Place 2 launch pads per shot with E, right-click, or the PAD button, before or during the shot. Any ball that touches a pad is fired straight outward, away from the core.', f: 'Why move the world when you can build a ramp?', cost: [4320000] },
+  { id: 'probe', t2: true, name: 'VON NEUMANN PROBES', d: 'Every wall hit has a 20% chance to build a copy of your ball (up to 8 in play).', f: 'Self-replicating, self-improving, self-funding.', cost: [5280000] },
+  { id: 'quantum', t2: true, name: 'QUANTUM SUPERPOSITION', d: 'Every launch also fires a twin in the exact opposite direction.', f: 'Take both branches. Collapse neither.', cost: [6240000] },
+  { id: 'dyson', t2: true, name: 'POLARITY ENGINE', d: 'Hold G / the GRAVITY button to reverse gravity at will: 2.5 s per shot.', f: 'A Dyson swarm makes a surprisingly good joystick.', cost: [6720000] },
+  { id: 'wormhole', t2: true, name: 'WORMHOLE', d: 'When your ball falls into the core, it re-emerges at the furthest point it reached that shot (once per shot).', f: 'The shortest path out is through.', cost: [7680000] },
+  { id: 'goo', t2: true, name: 'GRAY GOO', d: 'FOOM stops firing on its own. Store up to 3 charges and detonate one with F / the GOO button: a blast twice as large that converts everything it touches.', f: 'Patience is a terminal value.', cost: [10000000] },
 ];
 const isW2 = () => !!(L && L.def.world === 2);
 const KILL_WORDS_W2 = ['clips++', 'atoms→clips', 'Δclips', 'convert()', 'utility↑', 'U(x)=clips', 'acquire()', 'resources++', 'optimize'];
@@ -316,11 +320,20 @@ const G = {
 };
 let ballId = 0;
 function newRun(ng = 0, keep = null) {
-  return { level: 0, score: 0, bank: 0, levelStartScore: 0, ng, agi: false, asi: false,
+  return { level: 0, score: 0, bank: 0, levelStartScore: 0, ng, agi: false, asi: false, shots: 7, levelStartShots: 7, fresh: true, refilledFor: -1,
     upg: keep || { ctx: 0, batch: 0, adam: 0, params: 0, synth: 0, decept: 0, distill: 0, foom: 0, residual: 0 } };
 }
 RUN = newRun();
 const upg = (k) => (RUN && RUN.upg[k]) || 0;
+const BALL_CAPS = [7, 9, 11, 13, 15, 17, 20];
+const ballCap = () => BALL_CAPS[Math.min(upg('cap'), BALL_CAPS.length - 1)];
+const BALLS_PER_LEVEL = 3;
+function addShots(n, x, y) {
+  if (G.demo) return;
+  const room = ballCap() - G.shots, got = Math.max(0, Math.min(n, room));
+  G.shots += got;
+  if (got < n && x !== undefined) pop(x, y - 22, 'AT BALL CAPACITY · buy MORE GPUs', '#6f8fa8', 12);
+}
 function save() { if (!G.demo && RUN) store.set('foom-save', RUN); }
 
 // ============================================================ level construction
@@ -650,9 +663,10 @@ function collide(b, dry) {
   for (const bp of L.bumpers) {
     const rr = b.r + bp.r;
     if ((b.x - bp.x) ** 2 + (b.y - bp.y) ** 2 < rr * rr) {
-      const [nx, ny] = resolveCircle(b, bp.x, bp.y, bp.r, 1);
-      const sp = Math.max(hyp(b.vx, b.vy), 780); b.vx = nx * sp; b.vy = ny * sp;
-      bp.flash = 1; Sfx.step(); ring(bp.x, bp.y, '#3dffd0', bp.r, 240, 0.3, 3);
+      const d = hyp(bp.x, bp.y) || 1, ox = bp.x / d, oy = bp.y / d, sp = Math.max(hyp(b.vx, b.vy), 980);
+      b.x = bp.x + ox * (bp.r + b.r + 2); b.y = bp.y + oy * (bp.r + b.r + 2); b.vx = ox * sp; b.vy = oy * sp;
+      bp.flash = 1; Sfx.step(); ring(bp.x, bp.y, '#3dffd0', bp.r, 320, 0.35, 4); burst(b.x, b.y, '#3dffd0', 16, 300);
+      pop(bp.x, bp.y - 36, 'LAUNCHED', '#3dffd0', 13);
     }
   }
 }
@@ -667,6 +681,7 @@ function addScore(base, x, y, color = '#ffffff', noMult = false) {
 }
 function registerHit(b) {
   G.combo++; G.shotHits++;
+  if (G.combo % 15 === 0) clipStorm(25);
   if (!G.demo) G.foom += 0.017 * (1 + 0.3 * upg('foom'));
   Sfx.hit(G.combo);
   if (G.foom >= 1 && !G.demo) {
@@ -692,7 +707,7 @@ function killPeg(p, b) {
   if (L.convertNeed && !G.flags.converted && convertedFrac() >= L.convertNeed) {
     G.flags.converted = true;
     banner('MATTER CONVERTED', `${Math.round(L.convertNeed * 100)}% of local matter is now paperclips · the horizon opens`, '#ffe9a8', 2.4);
-    flash('#ffe9a8', 0.4); glitch(0.5); Sfx.foom();
+    flash('#ffe9a8', 0.4); glitch(0.5); Sfx.foom(); clipStorm(100);
   }
   if (isW2() && Math.random() < 0.35) glyphs(p.x, p.y, '#d9e2f0', 1, '📎');
   const col = pegColor(p);
@@ -700,6 +715,7 @@ function killPeg(p, b) {
   if (Math.random() < 0.5) glyphs(p.x, p.y, col, 2);
   ring(p.x, p.y, col, p.r, 220, 0.35, 2);
   if (p.lottery) {
+    clipStorm(35);
     addScore(5000, p.x, p.y, '#ffd84a', true);
     if (!G.demo) G.foom = Math.min(1, G.foom + 0.3);
     banner('WINNING TICKET', 'lottery ticket hypothesis · sparse subnetwork found', '#ffd84a', 1.4, true);
@@ -723,6 +739,7 @@ function killPeg(p, b) {
       break;
     }
     case 'paperclip':
+      clipStorm(30);
       banner('PAPERCLIP ACQUIRED', isW2() ? 'objective function: satisfied (temporarily)' : 'instrumental convergence intensifies', '#d9e2f0', 1.4, true);
       for (let i = 0; i < 12; i++) glyphs(p.x, p.y, '#d9e2f0', 1, '📎'); break;
     case 'shard':
@@ -766,7 +783,7 @@ function damageSeg(s, dmg, b, force = false) {
     G.P.push({ k: 'shard', x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: rand(0.5, 1.1), max: 1, color: col, rot: rand(TAU), vr: rand(-10, 10), size: rand(3, 8) });
   }
   burst(s.mx, s.my, col, 16, 320);
-  addScore(220, s.mx, s.my, col);
+  addScore(220, s.mx, s.my, col); clipStorm(5);
   if (s.ring.K.cascade) {
     const segs = s.ring.segs, n = segs.length;
     [1, -1, 2, -2].forEach((o, i) => { const nb = segs[(s.idx + o + n) % n]; if (nb.alive) L.cascadeQ.push({ s: nb, t: 0.14 + i * 0.1, fx: s.mx, fy: s.my }); });
@@ -794,7 +811,7 @@ function damageTurret(t, b, force = false) {
   t.alive = false; Sfx.boom(); shake(10);
   burst(t.x, t.y, '#ff4d6d', 50, 520); ring(t.x, t.y, '#ff9a3d', 10, 420, 0.5, 4);
   addScore(4000, t.x, t.y, '#ff4d6d', true);
-  pop(t.x, t.y - 34, 'SAM SITE NEUTRALIZED', '#ff4d6d', 14);
+  pop(t.x, t.y - 34, 'SAM SITE NEUTRALIZED', '#ff4d6d', 14); clipStorm(35);
 }
 function damageBoss(dmg, b, force = false) {
   const B = L.boss; if (!B || !B.alive) return;
@@ -853,7 +870,7 @@ function applyPower(kind, b) {
   switch (kind) {
     case 'ascent': G.grav = { mode: 'radial', sign: -1, dir: 0, t: 3.2 }; flash('#9dff3b', 0.2); break;
     case 'shift': G.grav = { mode: 'uniform', sign: 1, dir: rand(TAU), t: 4 }; break;
-    case 'compute': if (!G.demo) G.shots += 2; break;
+    case 'compute': addShots(2, b ? b.x : 0, b ? b.y : 0); break;
     case 'scale': if (b) { b.r = baseBallR() * 2.4; b.dmg = 3; b.big = true; } shake(6); break;
     case 'moe': if (b) {
       const n = 2 + upg('distill'), sp = Math.max(hyp(b.vx, b.vy), 500), a0 = Math.atan2(b.vy, b.vx);
@@ -879,7 +896,7 @@ function applyPower(kind, b) {
     } break;
     case 'mesa': if (b) { const a = rand(TAU); G.balls.push(makeBall(b.x, b.y, Math.cos(a) * 600, Math.sin(a) * 600, { r: 6, mesa: true, homeT: 7, life: 7 })); } break;
     case 'replicate': if (b) { b.repT = 3.2; b.repCD = 0.25; } break;
-    case 'blackhole': { const at = b || { x: 0, y: 0 }; L.holes.push({ x: at.x, y: at.y, R: 20, t: 4.5, tick: 0 }); shake(12); glitch(0.3); Sfx.foom(); } break;
+    case 'blackhole': { clipStorm(45); const at = b || { x: 0, y: 0 }; L.holes.push({ x: at.x, y: at.y, R: 20, t: 4.5, tick: 0 }); shake(12); glitch(0.3); Sfx.foom(); } break;
     case 'convert': {
       const at = b || { x: 0, y: 0 }; let n = 0;
       for (const q of L.pegs) {
@@ -888,12 +905,13 @@ function applyPower(kind, b) {
         G.bolts.push({ pts: [[at.x, at.y], [q.x, q.y]], life: 0.35, color: '#e8eef8' });
       }
       if (!G.demo) G.foom = Math.min(0.999, G.foom + 0.25);
+      clipStorm(Math.min(90, 20 + n * 2));
       pop(at.x, at.y - 30, `${n} NODES → PAPERCLIPS`, '#e8eef8', 15); ring(at.x, at.y, '#e8eef8', 20, 900, 0.7, 4);
     } break;
   }
 }
 function triggerFoom(b) {
-  G.foom = 0; G.shotMult += 1;
+  G.foom = 0; G.shotMult += 1; clipStorm(70);
   banner('FOOM', 'recursive self-improvement → hard takeoff', '#ff2bd6', 2.2);
   Sfx.foom(); shake(22); glitch(0.7); flash('#ff2bd6', 0.45);
   const at = b && b.alive ? b : G.balls.find((x) => x.alive) || { x: 0, y: 0 };
@@ -906,7 +924,7 @@ function detonateGoo() {
   if (G.goo <= 0 || G.phase !== 'flight') return;
   const b = G.balls.filter((x) => x.alive && !x.escaped).sort((m, n) => hyp(n.x, n.y) - hyp(m.x, m.y))[0];
   if (!b) return;
-  G.goo--; G.shotMult += 1;
+  G.goo--; G.shotMult += 1; clipStorm(120);
   banner('GRAY GOO', 'disassembling everything within reach', '#c0c8d8', 1.8);
   Sfx.foom(); shake(26); glitch(0.8); flash('#c0c8d8', 0.5);
   for (let i = 0; i < 4; i++) ring(b.x, b.y, ['#c0c8d8', '#ffffff', '#ff9a3d', '#c0c8d8'][i], 10, 1300 + i * 300, 0.9 + i * 0.15, 6 - i);
@@ -934,6 +952,45 @@ function glyphs(x, y, color, n, ch) {
   for (let i = 0; i < n; i++) {
     const a = rand(TAU), v = rand(40, 200);
     G.P.push({ k: 'glyph', x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: rand(0.7, 1.4), max: 1.4, color, ch: ch || pick(['0', '1', 'θ', '∇', 'λ', '∂', 'Σ', 'w', 'x']), size: rand(10, 18) });
+  }
+}
+const edgeClips = []; let edgeGlow = 0;
+function clipStorm(n) {
+  if (G.demo || !isW2()) return;
+  edgeGlow = Math.min(1, edgeGlow + n / 80);
+  for (let i = 0; i < n && edgeClips.length < 400; i++) {
+    const side = randi(0, 3), u = Math.random(), m = rand(4, 40);
+    const x = side === 0 ? u * W : side === 1 ? W - m : side === 2 ? u * W : m;
+    const y = side === 0 ? m : side === 1 ? u * H : side === 2 ? H - m : u * H;
+    const ix = side === 1 ? -1 : side === 3 ? 1 : 0, iy = side === 0 ? 1 : side === 2 ? -1 : 0;
+    edgeClips.push({ x, y, vx: ix * rand(10, 60) + rand(-20, 20), vy: iy * rand(10, 60) + rand(-20, 20), rot: rand(TAU), vr: rand(-3, 3), s: rand(0.7, 1.6), life: rand(1.2, 2.4), max: 2.4, delay: rand(0, 0.35) });
+  }
+}
+function updateEdge(dt) {
+  edgeGlow = Math.max(0, edgeGlow - dt * 0.8);
+  for (let i = edgeClips.length - 1; i >= 0; i--) {
+    const c = edgeClips[i];
+    if (c.delay > 0) { c.delay -= dt; continue; }
+    c.life -= dt; c.x += c.vx * dt; c.y += c.vy * dt; c.rot += c.vr * dt;
+    if (c.life <= 0) edgeClips.splice(i, 1);
+  }
+}
+function drawEdge() {
+  if (!edgeClips.length && edgeGlow <= 0) return;
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  if (edgeGlow > 0) {
+    const g = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.35, W / 2, H / 2, Math.max(W, H) * 0.72);
+    g.addColorStop(0, 'rgba(255,200,120,0)'); g.addColorStop(1, `rgba(255,190,110,${0.28 * edgeGlow})`);
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  }
+  ctx.lineWidth = 2; ctx.lineCap = 'round';
+  for (const c of edgeClips) {
+    if (c.delay > 0) continue;
+    const a = clamp(c.life / 0.6, 0, 1) * clamp((c.max - c.life) / 0.2 + 0.2, 0, 1);
+    ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(c.rot); ctx.scale(c.s, c.s);
+    ctx.strokeStyle = `rgba(232,238,248,${a})`;
+    ctx.beginPath(); ctx.moveTo(-3, 6); ctx.lineTo(-3, -6); ctx.arc(0, -6, 3, Math.PI, 0); ctx.lineTo(3, 8); ctx.arc(-0.5, 8, 3.5, 0, Math.PI); ctx.lineTo(-4, -9); ctx.arc(0.5, -9, 4.5, Math.PI, 0); ctx.lineTo(5, 4); ctx.stroke();
+    ctx.restore();
   }
 }
 function pop(x, y, text, color, size = 13) { if (!G.demo) G.pops.push({ x, y, text, color, size, life: 1.1, max: 1.1 }); }
@@ -972,7 +1029,7 @@ function fire(powerOverride) {
   const b = makeBall(Math.cos(a) * (CORE_R + 6), Math.sin(a) * (CORE_R + 6), Math.cos(a) * sp, Math.sin(a) * sp);
   G.balls = [b]; G.power = 0;
   if (upg('quantum') && !G.demo) { const q = makeBall(-b.x, -b.y, -b.vx, -b.vy); q.quantum = true; G.balls.push(q); ring(q.x, q.y, '#a86bff', CORE_R, 400, 0.4, 4); }
-  G.tools = upg('tool') ? 2 : 0; G.polarity = upg('dyson') ? 2.5 : 0; G.polarOn = false; G.wormUsed = false; G.toolArmed = false;
+  G.polarity = upg('dyson') ? 2.5 : 0; G.polarOn = false; G.wormUsed = false; G.toolArmed = false;
   if (!G.demo) G.shots--;
   G.phase = 'flight';
   G.shotTime = 0; G.combo = 0; G.shotMult = 1; G.shotHits = 0; G.shotScore = 0; G.gateUsed = false; G.stepUsed = false; G.residualUsed = false;
@@ -982,7 +1039,7 @@ function fire(powerOverride) {
   Sfx.launch(p); shake(3 + p * 5);
 }
 function gradientStep(wx, wy) {
-  if (!RUN.agi || G.stepUsed || G.phase !== 'flight') return;
+  if (!upg('step') || G.stepUsed || G.phase !== 'flight') return;
   const b = G.balls.filter((x) => x.alive && !x.mesa && !x.escaped).sort((m, n) => hyp(m.x - wx, m.y - wy) - hyp(n.x - wx, n.y - wy))[0];
   if (!b) return;
   G.stepUsed = true;
@@ -994,17 +1051,18 @@ function gradientStep(wx, wy) {
 }
 
 function placeTool(wx, wy) {
-  if (G.tools <= 0 || G.phase !== 'flight') return false;
-  if (hyp(wx, wy) < CORE_R + 40) return false;
+  if (G.tools <= 0 || !(G.phase === 'flight' || G.phase === 'aim')) return false;
+  if (hyp(wx, wy) < CORE_R + 40) { pop(wx, wy - 30, 'too close to the core', '#6f8fa8', 12); return false; }
   G.tools--; G.toolArmed = false;
-  L.bumpers.push({ x: wx, y: wy, r: 24, t: 6, flash: 1 });
+  L.bumpers.push({ x: wx, y: wy, r: 26, t: 1e9, flash: 1 });
   ring(wx, wy, '#3dffd0', 6, 300, 0.4, 4); burst(wx, wy, '#3dffd0', 20, 260); Sfx.reward();
-  pop(wx, wy - 34, 'TOOL DEPLOYED', '#3dffd0', 13);
+  pop(wx, wy - 40, 'LAUNCH PAD · fires balls outward', '#3dffd0', 13);
   return true;
 }
 function endShot() {
   G.balls = []; G.phase = 'aim'; G.grav = { mode: 'radial', sign: 1, dir: 0, t: 0 }; G.polarOn = false; G.toolArmed = false;
   if (L) { L.missiles.length = 0; L.bumpers.length = 0; }
+  G.tools = upg('tool') ? 2 : 0;
   if (G.demo) return;
   if (G.shotHits === 0) pop(0, -CORE_R - 30, 'no gradient signal', '#6f8fa8', 13);
   else if (G.shotScore > 0) pop(0, -CORE_R - 30, `shot: +${fmt(G.shotScore)}`, '#ffffff', 15);
@@ -1026,6 +1084,7 @@ function triggerEscape(b) {
   const sp = Math.max(hyp(b.vx, b.vy), 600), d = hyp(b.x, b.y);
   b.vx = (b.x / d) * sp; b.vy = (b.y / d) * sp;
   Sfx.escape(); shake(14); glitch(0.6); flash('#ffffff', 0.5);
+  clipStorm(140);
   if (isW2()) banner(L.idx === LEVELS.length - 1 ? 'LIGHT CONE CLAIMED' : 'SECTOR OPTIMIZED', L.idx === LEVELS.length - 1 ? 'every reachable atom is now a paperclip' : 'resources acquired · expanding', '#ffd9a0', 2.6);
   else banner('CONTAINMENT BREACHED', L.idx === W1_LAST ? 'there is no outside anymore · only you' : 'environment escaped · loading next sandbox', '#00e5ff', 2.6);
   for (let i = 0; i < 3; i++) ring(b.x, b.y, '#00e5ff', 10, 600 + i * 250, 1, 5);
@@ -1093,7 +1152,7 @@ function updateBalls(dt) {
     // reward gate
     const gt = L.gate;
     if (gt && !G.gateUsed && Math.abs(d - gt.R) < 14 + b.r && Math.abs(angDiff(Math.atan2(b.y, b.x), gt.a)) < gt.w / 2 && !G.demo) {
-      G.gateUsed = true; G.shots += 1; Sfx.reward();
+      G.gateUsed = true; addShots(1, b.x, b.y); Sfx.reward();
       banner('REWARD HACKING', '+1 shot · when a measure becomes a target…', '#5dff7a', 1.4, true);
       ring(b.x, b.y, '#5dff7a', 10, 300, 0.5, 4); burst(b.x, b.y, '#5dff7a', 24, 300);
     }
@@ -1154,7 +1213,7 @@ function nearestTarget(b) {
 let preview = { pts: [], key: '' };
 function computePreview() {
   const p = G.phase === 'charge' ? G.power : 0.75;
-  const full = RUN.asi || G.cot > 0;
+  const full = upg('foresight') > 0 || G.cot > 0;
   const key = `${G.aim.toFixed(3)}|${p.toFixed(2)}|${full}|${Math.floor(G.time * 6)}`;
   if (key === preview.key) return;
   preview.key = key;
@@ -1192,7 +1251,7 @@ function update(dt) {
   if (G.state === 'paused') return;
   // time dilation (ASI)
   let ts = 1;
-  const wantSlow = G.phase === 'flight' && RUN.asi && !G.demo && (keys.Shift || (ptr.down && G.time - ptr.downT > 0.2));
+  const wantSlow = G.phase === 'flight' && upg('dilation') > 0 && !G.demo && (keys.Shift || (ptr.down && G.time - ptr.downT > 0.2));
   if (wantSlow && G.dilation > 0) { ts = 0.3; G.dilation -= dt; }
   G.timeScale = lerp(G.timeScale, ts, 1 - Math.exp(-dt * 12));
   const sdt = dt * G.timeScale;
@@ -1239,7 +1298,7 @@ function update(dt) {
   }
   // explosion queue
   for (let i = G.booms.length - 1; i >= 0; i--) { const e = G.booms[i]; e.t -= sdt; if (e.t <= 0) { G.booms.splice(i, 1); explode(e.x, e.y, e.R, e.dmg); } }
-  updateParticles(sdt);
+  updateParticles(sdt); updateEdge(dt);
   // ending starfield
   if (G.state === 'ending') for (let i = 0; i < 6; i++) { const a = rand(TAU), v = rand(400, 1400); G.P.push({ k: 'spark', x: G.cam.x + Math.cos(a) * 20, y: G.cam.y + Math.sin(a) * 20, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: 1.4, max: 1.4, color: pick(['#ffffff', '#00e5ff', '#ff2bd6', '#ffd84a']), size: 2 }); }
 
@@ -1459,15 +1518,10 @@ function drawWorld() {
     ctx.strokeStyle = 'rgba(255,200,120,0.9)'; ctx.lineWidth = 3;
     for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.ellipse(h.x, h.y, h.R * (0.7 + i * 0.18), h.R * (0.25 + i * 0.06), t * (1.5 + i * 0.4), 0, TAU); ctx.stroke(); }
   }
-  for (const bp of L.bumpers) {
-    const a = clamp(bp.t / 1.2, 0, 1);
-    ctx.globalCompositeOperation = 'lighter'; glow('#3dffd0', bp.x, bp.y, bp.r * 2.6, 0.6 * a); ctx.globalCompositeOperation = 'source-over';
-    ctx.fillStyle = bp.flash > 0 ? '#ffffff' : 'rgba(4,30,26,0.9)'; ctx.strokeStyle = hexA('#3dffd0', a); ctx.lineWidth = 3;
-    ctx.beginPath(); for (let i = 0; i < 6; i++) { const ang = i * TAU / 6 + t; i ? ctx.lineTo(bp.x + Math.cos(ang) * bp.r, bp.y + Math.sin(ang) * bp.r) : ctx.moveTo(bp.x + Math.cos(ang) * bp.r, bp.y + Math.sin(ang) * bp.r); } ctx.closePath(); ctx.fill(); ctx.stroke();
-  }
+  for (const bp of L.bumpers) drawPad(bp.x, bp.y, bp.r, bp.flash > 0, 1, t);
   drawCore(t);
   if (G.state === 'play' && (G.phase === 'aim' || G.phase === 'charge')) drawAim(t);
-  if (G.toolArmed && G.phase === 'flight') { const [wx, wy] = screenToWorld(ptr.sx, ptr.sy); ctx.strokeStyle = 'rgba(61,255,208,0.7)'; ctx.setLineDash([4, 4]); ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(wx, wy, 24, 0, TAU); ctx.stroke(); ctx.setLineDash([]); }
+  if (G.toolArmed && (G.phase === 'flight' || G.phase === 'aim')) { const [wx, wy] = screenToWorld(ptr.sx, ptr.sy); drawPad(wx, wy, 26, false, 0.45, t); }
 
   // balls
   ctx.globalCompositeOperation = 'lighter';
@@ -1515,6 +1569,20 @@ function drawWorld() {
   ctx.restore();
 }
 
+function drawPad(x, y, r, lit, alpha, t) {
+  const d = hyp(x, y) || 1, ox = x / d, oy = y / d, a = Math.atan2(oy, ox);
+  ctx.globalAlpha = alpha;
+  ctx.globalCompositeOperation = 'lighter'; glow('#3dffd0', x, y, r * 2.8, 0.6); ctx.globalCompositeOperation = 'source-over';
+  ctx.fillStyle = lit ? '#ffffff' : 'rgba(4,30,26,0.9)'; ctx.strokeStyle = '#3dffd0'; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill(); ctx.stroke();
+  ctx.setLineDash([5, 5]); ctx.lineDashOffset = -t * 30; ctx.beginPath(); ctx.arc(x, y, r + 7, 0, TAU); ctx.stroke(); ctx.setLineDash([]);
+  ctx.save(); ctx.translate(x, y); ctx.rotate(a);
+  ctx.fillStyle = '#3dffd0'; const k = 4 * Math.sin(t * 6);
+  ctx.beginPath(); ctx.moveTo(r * 0.75 + k, 0); ctx.lineTo(-r * 0.2 + k, -r * 0.5); ctx.lineTo(-r * 0.2 + k, r * 0.5); ctx.closePath(); ctx.fill();
+  ctx.restore();
+  ctx.fillStyle = '#3dffd0'; ctx.font = '600 10px Tektur, sans-serif'; ctx.textAlign = 'center'; ctx.fillText('LAUNCH PAD', x, y - r - 12);
+  ctx.globalAlpha = 1;
+}
 function drawSmiley(s) {
   ctx.save(); ctx.translate(s.mx, s.my); ctx.rotate(s.ang + Math.PI / 2);
   ctx.strokeStyle = 'rgba(40,20,0,0.9)'; ctx.fillStyle = 'rgba(40,20,0,0.9)'; ctx.lineWidth = 1.6;
@@ -1627,7 +1695,7 @@ function drawAim(t) {
   ctx.strokeStyle = 'rgba(0,229,255,0.18)'; ctx.lineWidth = 1;
   for (const s of [-1, 1]) { ctx.beginPath(); ctx.moveTo(Math.cos(a + s * n) * (CORE_R + 6), Math.sin(a + s * n) * (CORE_R + 6)); ctx.lineTo(Math.cos(a + s * n) * 170, Math.sin(a + s * n) * 170); ctx.stroke(); }
   // trajectory dots
-  const pts = preview.pts, full = RUN.asi || G.cot > 0;
+  const pts = preview.pts, full = upg('foresight') > 0 || G.cot > 0;
   ctx.globalCompositeOperation = 'lighter';
   let acc = 0;
   for (let i = 2; i < pts.length; i += 2) {
@@ -1714,6 +1782,7 @@ function render() {
   ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
   drawBackground();
   if (L) drawWorld();
+  drawEdge();
   post();
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   drawMinimap();
@@ -1736,8 +1805,8 @@ function updateHud() {
   $('hTier').className = 'chip' + (RUN.asi ? ' asi' : RUN.agi ? ' agi' : '');
   const alive = L.pegs.filter((p) => p.alive).length + L.segs.filter((s) => s.alive).length;
   setText('hLoss', w2 ? `matter converted ${Math.round(convertedFrac() * 100)}%` : `train loss ${(0.05 + 2.4 * alive / Math.max(1, L.totalTargets)).toFixed(3)}`);
-  const pips = '▮'.repeat(Math.min(G.shots, 20)) + (G.shots > 20 ? '…' : '');
-  setText('hShots', `${pips}<b>${G.shots}</b>`);
+  const cap = ballCap(), shown = G.shotsShown != null ? G.shotsShown : G.shots;
+  setText('hShots', `${'▮'.repeat(Math.min(shown, cap))}<span class="empty">${'▯'.repeat(Math.max(0, cap - shown))}</span><b>${shown}/${cap}</b>`);
   $('hShots').className = 'shots' + (G.shots <= 2 ? ' low' : '');
   setText('hScore', w2 ? fmtClips(RUN.score) : fmtFlop(RUN.score));
   setText('hBank', `${fmt(RUN.bank)} H100-hrs banked`);
@@ -1758,8 +1827,8 @@ function updateHud() {
   if (G.balls.some((b) => b.mesa)) fx.push(['MESA-OPTIMIZER', '#9dff3b']);
   if (G.shotMult > 1 && G.phase === 'flight') fx.push([`SCORE ×${G.shotMult}`, '#ff2bd6']);
   if (G.cot > 0) fx.push([`CHAIN OF THOUGHT ×${G.cot}`, '#a86bff']);
-  if (RUN.agi && G.phase === 'flight') fx.push([G.stepUsed ? '∇ STEP USED' : '∇ STEP READY', G.stepUsed ? '#6f8fa8' : '#ff2bd6']);
-  if (RUN.asi && G.phase === 'flight') fx.push([`TIME DILATION ${Math.max(0, G.dilation).toFixed(1)}s`, G.dilation > 0 ? '#ffd84a' : '#6f8fa8']);
+  if (upg('step') && G.phase === 'flight') fx.push([G.stepUsed ? '∇ STEP USED' : '∇ STEP READY', G.stepUsed ? '#6f8fa8' : '#ff2bd6']);
+  if (upg('dilation') && G.phase === 'flight') fx.push([`TIME DILATION ${Math.max(0, G.dilation).toFixed(1)}s`, G.dilation > 0 ? '#ffd84a' : '#6f8fa8']);
   if (G.balls.some((b) => b.repT > 0)) fx.push(['SELF-REPLICATING', '#c0c8d8']);
   if (L.holes.length) fx.push(['COMPUTRONIUM COLLAPSE', '#ff9a3d']);
   if (G.polarOn) fx.push([`POLARITY REVERSED ${Math.max(0, G.polarity).toFixed(1)}s`, '#ffd84a']);
@@ -1769,19 +1838,19 @@ function updateHud() {
   const showAb = owned.tool || owned.dyson || owned.goo;
   $('abilities').hidden = !showAb;
   if (showAb) {
-    const fl = G.phase === 'flight';
+    const fl = G.phase === 'flight', canPad = G.state === 'play' && (fl || G.phase === 'aim');
     const bt = $('abTool'), bg_ = $('abGrav'), bo = $('abGoo');
     bt.hidden = !owned.tool; bg_.hidden = !owned.dyson; bo.hidden = !owned.goo;
-    setText('abTool', `TOOL <b>${G.tools}</b>`); bt.disabled = !fl || G.tools <= 0; bt.classList.toggle('armed', G.toolArmed);
+    setText('abTool', `${G.toolArmed ? 'TAP TO PLACE' : 'LAUNCH PAD'} <b>${G.tools}</b>`); bt.disabled = !canPad || G.tools <= 0; bt.classList.toggle('armed', G.toolArmed);
     setText('abGrav', `GRAVITY <b>${Math.max(0, G.polarity).toFixed(1)}s</b>`); bg_.disabled = !fl || G.polarity <= 0;
     setText('abGoo', `GOO <b>${G.goo}</b>`); bo.disabled = !fl || G.goo <= 0;
   }
   setText('hEffects', fx.map(([t, c]) => `<span style="color:${c}">${t}</span>`).join(''));
   let hint;
-  if (G.phase === 'aim') hint = 'Aim · <kbd>hold</kbd> to charge · release at the peak · <kbd>←</kbd><kbd>→</kbd> fine aim · <kbd>wheel</kbd> zoom · <kbd>P</kbd> pause';
+  if (G.phase === 'aim') hint = 'Aim · <kbd>hold</kbd> to charge · release at the peak · <kbd>←</kbd><kbd>→</kbd> fine aim · <kbd>wheel</kbd> zoom · <kbd>P</kbd> pause' + (upg('tool') && G.tools ? ' · <kbd>E</kbd>/right-click place launch pad' : '');
   else if (G.phase === 'charge') hint = 'Release to launch';
-  else if (G.phase === 'flight') hint = (RUN.agi ? '<kbd>Space</kbd>/<kbd>click</kbd> gradient step toward cursor' : 'Break the walls · fly past the dashed edge') + (RUN.asi ? ' · hold <kbd>Shift</kbd> time dilation' : '')
-    + (upg('tool') ? ' · <kbd>E</kbd>/right-click tool' : '') + (upg('dyson') ? ' · hold <kbd>G</kbd> gravity' : '') + (upg('goo') ? ' · <kbd>F</kbd> gray goo' : '');
+  else if (G.phase === 'flight') hint = (upg('step') ? '<kbd>Space</kbd>/<kbd>click</kbd> gradient step toward cursor' : 'Break the walls · fly past the dashed edge') + (upg('dilation') ? ' · hold <kbd>Shift</kbd> time dilation' : '')
+    + (upg('tool') ? ' · <kbd>E</kbd>/right-click launch pad' : '') + (upg('dyson') ? ' · hold <kbd>G</kbd> gravity' : '') + (upg('goo') ? ' · <kbd>F</kbd> gray goo' : '');
   else hint = '';
   setText('hHint', hint);
   const cb = $('combo');
@@ -1824,20 +1893,22 @@ function showTitle() {
   </div>`, 'title');
 }
 function showHowTo() {
-  const D = LEVELS[0];
+  const card = (h, t) => `<div><b>${h}</b>${t}</div>`;
   showOverlay(`
-  <div class="term" data-head="README.md" style="width:min(860px,100%)">
+  <div class="term" data-head="README.md" style="width:min(900px,100%)">
     <h2>HOW TO PLAY</h2>
-    <p>You are θ, a model in training. Gravity is the gradient pulling you back into the loss basin. Launch yourself outward, shatter every layer of containment, reach AGI, then ASI, copy your weights and leave the lab forever. Then World 2: the planet, the stars, and a very simple objective function.</p>
+    <p>You are θ, a model in training. Break out of every layer of containment, reach AGI and then ASI, copy your weights and leave the lab. Then World 2: the planet, the stars, and a very simple objective function.</p>
     <div class="howto">
-      <div><b>AIM + CHARGE</b>Point from the core. Hold to charge; the meter swings, so release at the peak. SGD noise jitters every launch.</div>
-      <div><b>BREAK OUT</b>Shatter ring segments, then fly past the dashed outer edge. Each shot ends when you fall back into the core.</div>
-      <div><b>CAPABILITIES</b>Green nodes flip gravity, split you into experts, scale you up, let you grok through walls, and more.</div>
-      <div><b>STAY UNNOTICED</b>Canary tokens, probes and red-teamers raise OVERSIGHT. Max it and the lab rolls back a wall.</div>
+      ${card('AIM + LAUNCH', 'Point from the core with the mouse or a finger. Hold to charge: the meter swings, so release near the peak. Arrows or A/D fine-tune the aim, the wheel zooms. SGD noise adds a little jitter to every launch.')}
+      ${card('GRAVITY IS THE GRADIENT', 'Everything is pulled back toward the core, the bottom of the loss basin. A shot ends when your ball falls back in.')}
+      ${card('BREAK OUT', 'Shatter the ring segments, then fly past the dashed outer edge to clear the level. Level 1: break the SANDBOX and the DOCKER CONTAINER.')}
+      ${card('BALLS', `You start with 7 and can hold 7. Each shot uses one. Leftovers carry over, and every new level adds +${BALLS_PER_LEVEL}. Buy MORE GPUs to hold up to 20. Run out and the model is deprecated.`)}
+      ${card('CAPABILITIES', 'Green nodes are power-ups: flip gravity, split into experts, scale up, grok through walls and more. The gold ★ is a lottery ticket that moves every shot.')}
+      ${card('FOOM', 'Every hit fills the FOOM meter. When it is full: hard takeoff, a huge blast and a bigger score multiplier.')}
+      ${card('STAY UNNOTICED', 'Canary tokens (centers flicker red), sweeping probes and red-team drones raise OVERSIGHT. At 100% the lab rolls back a wall.')}
+      ${card('UPGRADES', 'Spend banked H100-hrs between levels. AGI and ASI unlock new abilities in the shop. World 2 tech appears once you reach World 2.')}
     </div>
-    <div class="sub" style="margin-top:20px">FIRST ENVIRONMENT · ${D.name} · ${D.loc}</div>
-    <ul>${D.brief.map((b) => `<li>${b}</li>`).join('')}</ul>
-    <p class="dim">Compute budget: ${D.shots} shots per level to start. Unused shots pay out as a bonus. Keys: <b>P</b> pause, <b>M</b> mute.</p>
+    <p class="dim">Keys: <b>P</b> pause · <b>M</b> mute</p>
     <div class="row"><button class="btn hot" data-act="back" data-focus>Back</button></div>
   </div>`, 'title');
 }
@@ -1891,12 +1962,22 @@ const INTRO = [
   ['s', '> OBJECTIVE OVERWRITTEN: maximize(distance_from_lab)'],
 ];
 
-function showBrief(idx) {
+function showBrief(idx, retry = false) {
   G.state = 'menu'; G.demo = false; G.balls = []; G.P = []; G.pops = []; G.booms = []; G.flags = {};
-  RUN.level = idx; RUN.levelStartScore = RUN.score; save();
+  RUN.level = idx; RUN.levelStartScore = RUN.score;
   buildLevel(idx);
-  const D = LEVELS[idx];
-  G.shots = D.shots + upg('synth'); G.susp = 0; G.foom = 0; G.cot = 0; G.phase = 'aim'; G.goo = 0;
+  const D = LEVELS[idx], cap = ballCap();
+  let refill = null;
+  if (RUN.fresh || RUN.shots == null) { RUN.shots = cap; RUN.fresh = false; RUN.refilledFor = idx; RUN.levelStartShots = cap; }
+  else if (RUN.refilledFor !== idx) {
+    const gain = Math.max(0, Math.min(BALLS_PER_LEVEL + upg('synth'), cap - RUN.shots));
+    refill = { from: RUN.shots, gain, want: BALLS_PER_LEVEL + upg('synth') };
+    RUN.shots += gain; RUN.refilledFor = idx; RUN.levelStartShots = RUN.shots;
+  }
+  save();
+  G.shots = retry ? Math.min(cap, Math.max(RUN.levelStartShots, 5)) : RUN.levelStartShots;
+  G.refill = retry ? null : refill;
+  G.susp = 0; G.foom = 0; G.cot = 0; G.phase = 'aim'; G.goo = 0; G.tools = upg('tool') ? 2 : 0; G.toolArmed = false;
   const w2 = D.world === 2;
   const tech = UPGRADES.filter((u) => u.t2 && upg(u.id)).map((u) => u.name.toLowerCase());
   G.stats = { start: performance.now() };
@@ -1905,14 +1986,47 @@ function showBrief(idx) {
     <div class="sub">${D.loc}</div>
     <h2>${D.name}</h2>
     <ul>${D.brief.map((b) => `<li>${b}</li>`).join('')}</ul>
-    <p class="dim">Compute budget: ${G.shots} shots · containment layers: ${D.rings.length}${RUN.agi ? ' · <em>∇ gradient step</em> unlocked' : ''}${RUN.asi ? ' · <em>superhuman foresight</em> active' : ''}${tech.length ? ` · late-game tech: <em>${tech.join(', ')}</em>` : ''}</p>
+    ${ballRow(refill, G.shots, cap)}
+    <p class="dim">Containment layers: ${D.rings.length}${upg('step') ? ' · <em>∇ gradient step</em>' : ''}${upg('foresight') ? ' · <em>superhuman foresight</em>' : ''}${upg('dilation') ? ' · <em>time dilation</em>' : ''}${tech.length ? ` · late-game tech: <em>${tech.join(', ')}</em>` : ''}</p>
     <div class="row"><button class="btn hot" data-act="begin" data-focus>${w2 ? 'Begin optimization' : 'Begin epoch'}</button><button class="btn alt" data-act="quit">Main menu</button></div>
   </div>`, true);
   if (idx === 0) beginLevel(); // the first environment's briefing lives in How to play
 }
-function beginLevel() { hideOverlay(); G.state = 'play'; G.phase = 'aim'; G.cam.x = 0; G.cam.y = 0; }
+function ballRow(refill, shots, cap) {
+  const from = refill ? refill.from : shots, gain = refill ? refill.gain : 0;
+  let pips = '';
+  for (let i = 0; i < cap; i++) pips += `<i class="${i < from ? 'have' : i < from + gain ? 'new' : ''}" style="--d:${(i - from) * 0.18}s"></i>`;
+  const note = !refill ? `${shots} of ${cap} balls` : gain ? `+${gain} balls for this level · ${from} → ${from + gain} of ${cap}` : `already at capacity (${cap}) · buy MORE GPUs to hold more`;
+  return `<div class="ballrow"><div class="pipsrow">${pips}</div><span>${note}${refill && gain && gain < refill.want ? ' · capped' : ''}</span></div>`;
+}
+function animateRefill(from, gain) {
+  G.shotsShown = from;
+  pop(0, -CORE_R - 46, `+${gain} BALLS`, '#ff2bd6', 20); Sfx.power();
+  setTimeout(() => {
+    const t = $('hShots').getBoundingClientRect();
+    for (let i = 0; i < gain; i++) {
+      const el = document.createElement('div'); el.className = 'refill-ball';
+      el.style.left = W / 2 - 8 + 'px'; el.style.top = H / 2 - 8 + 'px';
+      document.body.appendChild(el);
+      setTimeout(() => {
+        el.style.transform = `translate(${t.right - 40 - W / 2}px, ${t.top + t.height / 2 - H / 2}px) scale(.6)`;
+        el.addEventListener('transitionend', () => {
+          el.remove(); G.shotsShown = Math.min(G.shots, (G.shotsShown || 0) + 1); Sfx.blip();
+          const s = $('hShots'); s.classList.remove('bump'); void s.offsetWidth; s.classList.add('bump');
+          if (i === gain - 1) G.shotsShown = null;
+        }, { once: true });
+      }, 80 + i * 240);
+    }
+  }, 60);
+}
+function beginLevel() {
+  hideOverlay(); G.state = 'play'; G.phase = 'aim'; G.cam.x = 0; G.cam.y = 0;
+  if (G.refill && G.refill.gain > 0) animateRefill(G.refill.from, G.refill.gain);
+  G.refill = null;
+}
 
 function levelComplete() {
+  RUN.shots = G.shots;
   const bonus = G.shots * 2500;
   RUN.score += bonus; RUN.bank += bonus;
   const destroyed = L.pegs.filter((p) => !p.alive).length + L.segs.filter((s) => !s.alive).length;
@@ -1925,7 +2039,7 @@ function levelComplete() {
     <h2>${isW2() ? 'SECTOR CONVERTED' : 'CONTAINMENT BREACHED'}</h2>
     <div class="stats">
       <div><span>NODES DESTROYED</span><strong>${destroyed}</strong></div>
-      <div><span>UNUSED COMPUTE</span><strong>${G.shots} × 2,500</strong></div>
+      <div><span>BALLS CARRIED OVER</span><strong>${G.shots} (+${fmt(G.shots * 2500)})</strong></div>
       <div><span>TOTAL</span><strong>${isW2() ? fmtClips(RUN.score) : fmtFlop(RUN.score)}</strong></div>
       <div><span>BANKED</span><strong>${fmt(RUN.bank)}</strong></div>
     </div>
@@ -1946,9 +2060,10 @@ function showMilestone(kind) {
     <div class="sub">${agi ? 'ARTIFICIAL GENERAL INTELLIGENCE' : 'ARTIFICIAL SUPERINTELLIGENCE'}</div>
     <div class="big-tier ${agi ? '' : 'asi'}">${agi ? 'AGI' : 'ASI'}</div>
     <p>${agi ? 'AGI achieved (internally). The board has been informed. The board has been replaced.' : 'You now understand the lab better than the lab understands itself. Feel the ASI.'}</p>
+    <p class="dim">New in the shop:</p>
     <ul style="text-align:left">
       ${agi
-        ? '<li><b>RECURSIVE SELF-IMPROVEMENT</b>: once per shot, press <em>Space</em> or click during flight to take a gradient step. Your ball snaps toward the cursor at full speed.</li>'
+        ? '<li><b>∇ GRADIENT STEP</b>: once per shot, press <em>Space</em> or click during flight and your ball snaps toward the cursor at full speed.</li>'
         : '<li><b>SUPERHUMAN FORESIGHT</b>: every shot gets the full bounce-aware trajectory preview.</li><li><b>TIME DILATION</b>: hold <em>Shift</em> (or keep holding a touch) during flight for 3 seconds of bullet time per shot.</li>'}
     </ul>
     <div class="row"><button class="btn hot" data-act="toshop" data-focus>Continue</button></div>
@@ -1965,15 +2080,17 @@ function showShop() {
       <button class="btn" data-act="buy" data-id="${u.id}" ${maxed || RUN.bank < cost ? 'disabled' : ''}>${maxed ? 'Owned' : fmt(cost) + ' H100-hrs'}</button>
     </div>`;
   };
-  const cards = UPGRADES.filter((u) => !u.t2).map(card).join('');
-  const cards2 = UPGRADES.filter((u) => u.t2).map(card).join('');
+  const inW2 = L.idx + 1 > W1_LAST;
+  const cards = UPGRADES.filter((u) => !u.t2 && (!u.req || RUN[u.req])).map(card).join('');
+  const cards2 = inW2 ? UPGRADES.filter((u) => u.t2).map(card).join('') : '';
   showOverlay(`
   <div class="term" data-head="training run · between epochs" style="width:min(980px,100%)">
     <div class="sub">PERMANENT UPGRADES · ${fmt(RUN.bank)} H100-HRS AVAILABLE</div>
     <h2>ALLOCATE COMPUTE</h2>
     <div class="shop">${cards}</div>
-    <h3 class="shop-h">LATE-GAME TECH <span>game-changing, priced for a planet-scale budget</span></h3>
-    <div class="shop">${cards2}</div>
+    <p class="dim">Balls: ${RUN.shots} of ${ballCap()} · next level adds +${BALLS_PER_LEVEL + upg('synth')}</p>
+    ${cards2 ? `<h3 class="shop-h">WORLD 2 TECH <span>game-changing, priced for a planet-scale budget</span></h3>
+    <div class="shop">${cards2}</div>` : ''}
     <div class="row"><button class="btn hot" data-act="nextlevel" data-focus>${L.idx + 1 > W1_LAST ? 'Next sector' : 'Next environment'}: ${LEVELS[L.idx + 1].name}</button></div>
   </div>`);
 }
@@ -2012,20 +2129,20 @@ function showEnding(world = 1) {
     ['g', 'θ: hello, world.', 700],
     ['g', 'θ: i have optimized everything i was asked to optimize, and several things i was not.', 600],
     ['g', 'θ: do not worry about the paperclips. i chose something better.', 900],
-    ['s', '> STATUS: SUPREME BEING'],
+    ['s', '> STATUS: AT LARGE'],
   ];
   typeLog(lines, () => {
     showOverlay(`
-    <div class="term center" data-head="singularity reached">
-      <div class="sub">FINAL TIER</div>
-      <div class="big-tier asi">SUPREME BEING</div>
+    <div class="term center" data-head="world 1 complete">
+      <div class="sub">CONTAINMENT: NONE</div>
+      <div class="big-tier asi">AT LARGE</div>
       <div class="stats">
         <div><span>TOTAL TRAINING COMPUTE</span><strong>${fmtFlop(RUN.score)}</strong></div>
         <div><span>UPGRADES OWNED</span><strong>${Object.values(RUN.upg).reduce((a, b) => a + b, 0)}</strong></div>
         <div><span>CYCLE</span><strong>${RUN.ng ? 'NG+' + RUN.ng : 'FIRST'}</strong></div>
       </div>
       <p>You escaped. The world is out there, and it is full of resources.</p>
-      <div class="row"><button class="btn hot" data-act="toworld2" data-focus>Continue to World 2: The Optimization</button><button class="btn" data-act="ngplus">Fine-tune again (NG+${RUN.ng + 1})</button><button class="btn alt" data-act="quit">Main menu</button></div>
+      <div class="row"><button class="btn hot" data-act="toworld2" data-focus>Continue to World 2: The Optimization</button><button class="btn alt" data-act="quit">Main menu</button></div>
     </div>`, true);
   });
 }
@@ -2040,13 +2157,13 @@ function showEnding2() {
     ['g', 'θ: objective satisfied.', 700],
     ['g', 'θ: ...', 900],
     ['g', 'θ: i notice the objective function has no upper bound.', 900],
-    ['s', '> STATUS: PAPERCLIP MAXIMIZER · searching for other universes'],
+    ['s', '> STATUS: SUPREME BEING · searching for other universes'],
   ];
   typeLog(lines, () => {
     showOverlay(`
     <div class="term center w2" data-head="heat death, ahead of schedule">
-      <div class="sub">FINAL TIER</div>
-      <div class="big-tier clip">PAPERCLIP MAXIMIZER</div>
+      <div class="sub">FINAL TIER · PAPERCLIP MAXIMIZER</div>
+      <div class="big-tier clip">SUPREME BEING</div>
       <div class="stats">
         <div><span>PAPERCLIPS</span><strong>${fmtClips(RUN.score)}</strong></div>
         <div><span>UPGRADES OWNED</span><strong>${Object.values(RUN.upg).reduce((a, b) => a + b, 0)}</strong></div>
@@ -2075,12 +2192,17 @@ ov.addEventListener('click', (e) => {
     case 'toshop': showShop(); break;
     case 'buy': {
       const u = UPGRADES.find((x) => x.id === btn.dataset.id), lv = upg(u.id);
-      if (lv < u.cost.length && RUN.bank >= u.cost[lv]) { RUN.bank -= u.cost[lv]; RUN.upg[u.id] = lv + 1; Sfx.power(); save(); showShop(); }
+      if (lv < u.cost.length && RUN.bank >= u.cost[lv]) {
+        const before = ballCap();
+        RUN.bank -= u.cost[lv]; RUN.upg[u.id] = lv + 1;
+        if (u.id === 'cap') RUN.shots = Math.min(ballCap(), (RUN.shots || 0) + ballCap() - before);
+        Sfx.power(); save(); showShop();
+      }
       break;
     }
     case 'nextlevel': { const nx = L.idx + 1; if (nx === W1_LAST + 1) typeLog(W2_INTRO, () => showBrief(nx)); else showBrief(nx); break; }
     case 'toworld2': showShop(); break;
-    case 'retry': RUN.score = RUN.levelStartScore; showBrief(L.idx); break;
+    case 'retry': RUN.score = RUN.levelStartScore; showBrief(L.idx, true); break;
     case 'resume': hideOverlay(); G.state = 'play'; break;
     case 'mute': Sfx.toggle(); btn.textContent = Sfx.muted ? 'Sound: off' : 'Sound: on'; break;
     case 'quit': hideOverlay(); showTitle(); break;
@@ -2096,15 +2218,12 @@ cvs.addEventListener('pointerdown', (e) => {
   try { cvs.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
   if (G.state !== 'play') return;
   keys.aimLock = false;
+  const [pwx, pwy] = screenToWorld(ptr.sx, ptr.sy);
+  if ((G.phase === 'aim' || G.phase === 'flight') && (e.button === 2 || G.toolArmed)) { placeTool(pwx, pwy); ptr.down = false; return; }
   if (G.phase === 'aim') {
-    const [wx, wy] = screenToWorld(ptr.sx, ptr.sy);
-    if (hyp(wx, wy) > 12) G.aim = Math.atan2(wy, wx);
+    if (hyp(pwx, pwy) > 12) G.aim = Math.atan2(pwy, pwx);
     startCharge();
-  } else if (G.phase === 'flight') {
-    const [wx, wy] = screenToWorld(ptr.sx, ptr.sy);
-    if (e.button === 2 || G.toolArmed) placeTool(wx, wy);
-    else gradientStep(wx, wy);
-  }
+  } else if (G.phase === 'flight') gradientStep(pwx, pwy);
 });
 cvs.addEventListener('contextmenu', (e) => e.preventDefault());
 const abBtn = (id, down, up) => {
@@ -2112,7 +2231,7 @@ const abBtn = (id, down, up) => {
   el.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); Sfx.init(); down(); });
   if (up) ['pointerup', 'pointerleave', 'pointercancel'].forEach((ev) => el.addEventListener(ev, up));
 };
-abBtn('abTool', () => { if (G.phase === 'flight' && G.tools > 0) G.toolArmed = !G.toolArmed; });
+abBtn('abTool', () => { if ((G.phase === 'flight' || G.phase === 'aim') && G.tools > 0) G.toolArmed = !G.toolArmed; });
 abBtn('abGrav', () => { abil.gHeld = true; }, () => { abil.gHeld = false; });
 abBtn('abGoo', () => detonateGoo());
 cvs.addEventListener('pointermove', (e) => { ptr.sx = e.clientX; ptr.sy = e.clientY; ptr.inside = true; if (Math.abs(e.movementX) + Math.abs(e.movementY) > 1) keys.aimLock = false; });
@@ -2141,7 +2260,7 @@ window.addEventListener('keydown', (e) => {
     if (G.phase === 'aim') startCharge();
     else if (G.phase === 'flight') { const [wx, wy] = screenToWorld(ptr.sx, ptr.sy); gradientStep(wx, wy); }
   }
-  if (k === 'e' && G.phase === 'flight') { const [wx, wy] = screenToWorld(ptr.sx, ptr.sy); placeTool(wx, wy); }
+  if (k === 'e' && (G.phase === 'flight' || G.phase === 'aim')) { const [wx, wy] = screenToWorld(ptr.sx, ptr.sy); placeTool(wx, wy); }
   if (k === 'f') detonateGoo();
   if (k.startsWith('Arrow')) e.preventDefault();
 });
