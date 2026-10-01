@@ -345,6 +345,7 @@ function addShots(n, x, y) {
   G.shots += got;
   if (got < n && x !== undefined) pop(x, y - 22, 'AT BALL CAPACITY · buy MORE GPUs', '#6f8fa8', 12);
 }
+const BUILD = '2026.10.01-c';
 const RETRY_SHOTS = 7;
 function wipeCompute() { RUN.score = 0; RUN.bank = 0; RUN.levelStartScore = 0; RUN.shots = RUN.levelStartShots = RETRY_SHOTS; save(); }
 function save() { if (!G.demo && RUN) store.set('foom-save', RUN); }
@@ -1097,8 +1098,9 @@ const noiseRad = () => (4.5 * Math.pow(0.65, upg('batch')) * Math.PI) / 180;
 const launchSpeed = (p) => (330 + 840 * p) * (1 + 0.12 * upg('adam'));
 const triangle = (x) => { const m = x % 2; return m < 1 ? m : 2 - m; };
 
-function startCharge() { if (G.phase !== 'aim') return; G.phase = 'charge'; G.chargeT = 0; G.power = 0; }
+function startCharge() { if (G.phase !== 'aim' || (!G.demo && G.shots <= 0)) return; G.phase = 'charge'; G.chargeT = 0; G.power = 0; }
 function fire(powerOverride) {
+  if (!G.demo && G.shots <= 0) { G.phase = 'aim'; return; }
   const p = powerOverride !== undefined ? powerOverride : Math.max(0.06, G.power);
   const n = noiseRad();
   const a = G.aim + (Math.random() + Math.random() - 1) * n;
@@ -1921,7 +1923,7 @@ function updateHud() {
   $('hTier').className = 'chip' + (RUN.asi ? ' asi' : RUN.agi ? ' agi' : '');
   const alive = L.pegs.filter((p) => p.alive).length + L.segs.filter((s) => s.alive).length;
   setText('hLoss', w2 ? `matter converted ${Math.round(convertedFrac() * 100)}%` : `train loss ${(0.05 + 2.4 * alive / Math.max(1, L.totalTargets)).toFixed(3)}`);
-  const cap = ballCap(), shown = G.shotsShown != null ? G.shotsShown : G.shots;
+  const cap = ballCap(), shown = Math.max(0, G.shotsShown != null ? Math.min(G.shotsShown, G.shots) : G.shots);
   setText('hShots', `${'▮'.repeat(Math.min(shown, cap))}<span class="empty">${'▯'.repeat(Math.max(0, cap - shown))}</span><b>${shown}/${cap}</b>`);
   $('hShots').className = 'shots' + (G.shots <= 2 ? ' low' : '');
   setText('hScore', w2 ? fmtClips(RUN.score) : fmtFlop(RUN.score));
@@ -2012,6 +2014,7 @@ function showTitle() {
       <button class="btn" data-act="howto">How to play</button>
       <button class="btn alt" data-act="mute">${Sfx.muted ? 'Sound: off' : 'Sound: on'}</button>
     </div>
+    <div style="margin-top:18px;font-size:11px;opacity:.45;letter-spacing:.1em">BUILD ${BUILD}</div>
   </div>`, 'title');
 }
 function showHowTo() {
@@ -2139,6 +2142,7 @@ function animateRefill(from, gain) {
         }, { once: true });
       }, 80 + i * 240);
     }
+    setTimeout(() => { G.shotsShown = null; }, 80 + gain * 240 + 1500);
   }, 60);
 }
 function beginLevel() {
@@ -2402,10 +2406,8 @@ let last = performance.now();
 function frame(now) {
   const raw = (now - last) / 1000, dt = Math.min(0.033, raw); last = now;
   if (!quality.low && raw < 0.5) { quality.acc += raw; quality.n++; if (quality.n >= 120) { if (quality.acc / quality.n > 0.028) { quality.low = true; resize(); } quality.acc = 0; quality.n = 0; } }
-  update(dt);
-  render();
-  updateHud();
   requestAnimationFrame(frame);
+  try { update(dt); render(); updateHud(); } catch (e) { console.error(e); }
 }
 window.claude?.hot?.snapshot?.(() => ({ run: G.demo ? null : RUN }));
 const start = (data) => {
