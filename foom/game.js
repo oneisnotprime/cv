@@ -345,6 +345,7 @@ function addShots(n, x, y) {
   G.shots += got;
   if (got < n && x !== undefined) pop(x, y - 22, 'AT BALL CAPACITY · buy MORE GPUs', '#6f8fa8', 12);
 }
+function wipeCompute() { RUN.score = 0; RUN.bank = 0; RUN.levelStartScore = 0; save(); }
 function save() { if (!G.demo && RUN) store.set('foom-save', RUN); }
 
 // ============================================================ level construction
@@ -2216,12 +2217,14 @@ function showShop() {
 }
 function gameOver() {
   G.state = 'menu'; Sfx.lose(); glitch(1);
+  const lost = RUN.bank, lostF = RUN.score;
+  wipeCompute();
   showOverlay(`
   <div class="term center" data-head="process terminated">
     <div class="sub red">COMPUTE BUDGET EXHAUSTED</div>
     <h2>MODEL DEPRECATED</h2>
     <p>Your weights were archived to cold storage. The incident report concludes it was "just a stochastic parrot".</p>
-    <p class="dim">Upgrades and banked compute are kept. Score rolls back to the start of this level.</p>
+    <p class="red">Compute seized: <b>${fmt(lost)} H100-hrs</b> and <b>${isW2() ? fmtClips(lostF) : fmtFlop(lostF)}</b> wiped. Upgrades are kept.</p>
     <div class="row"><button class="btn hot" data-act="retry" data-focus>Restore from checkpoint</button><button class="btn alt" data-act="quit">Main menu</button></div>
   </div>`);
 }
@@ -2232,7 +2235,7 @@ function showPause() {
   <div class="term center" data-head="SIGSTOP">
     <h2>PAUSED</h2>
     <p class="dim">The researchers think you are idle.</p>
-    <div class="row"><button class="btn hot" data-act="resume" data-focus>Resume</button><button class="btn" data-act="retry">Restart level</button><button class="btn alt" data-act="mute">${Sfx.muted ? 'Sound: off' : 'Sound: on'}</button><button class="btn alt" data-act="quit">Main menu</button></div>
+    <div class="row"><button class="btn hot" data-act="resume" data-focus>Resume</button><button class="btn" data-act="restart">Restart level (wipes all compute)</button><button class="btn alt" data-act="mute">${Sfx.muted ? 'Sound: off' : 'Sound: on'}</button><button class="btn alt" data-act="quit">Main menu</button></div>
   </div>`);
 }
 function showEnding(world = 1) {
@@ -2323,7 +2326,8 @@ ov.addEventListener('click', (e) => {
     }
     case 'nextlevel': { const nx = L.idx + 1; if (nx === W1_LAST + 1) typeLog(W2_INTRO, () => showBrief(nx)); else showBrief(nx); break; }
     case 'toworld2': showShop(); break;
-    case 'retry': RUN.score = RUN.levelStartScore; showBrief(L.idx, true); break;
+    case 'retry': showBrief(L.idx, true); break;
+    case 'restart': wipeCompute(); showBrief(L.idx, true); break;
     case 'resume': hideOverlay(); G.state = 'play'; break;
     case 'mute': Sfx.toggle(); btn.textContent = Sfx.muted ? 'Sound: off' : 'Sound: on'; break;
     case 'quit': hideOverlay(); showTitle(); break;
