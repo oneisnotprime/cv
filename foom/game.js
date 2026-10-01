@@ -187,12 +187,12 @@ const UPGRADES = [
   { id: 'foom', name: 'RECURSIVE REWARD', d: 'FOOM meter fills 30% faster.', f: 'Train the model that trains the model.', cost: [9000, 20000] },
   { id: 'residual', name: 'RESIDUAL CONNECTION', d: 'Once per shot, the core skips your ball back out instead of absorbing it.', f: 'x + F(x). The gradient never vanishes.', cost: [16000] },
   // late-game tech: priced for World 2 earnings
-  { id: 'tool', t2: true, name: 'TOOL USE', d: 'During flight, right-click / E / the TOOL button drops a bumper at the cursor that launches your ball. 2 per shot.', f: 'Why move the world when you can build a lever?', cost: [240000] },
-  { id: 'probe', t2: true, name: 'VON NEUMANN PROBES', d: 'Every wall hit has a 20% chance to build a copy of your ball (up to 8 in play).', f: 'Self-replicating, self-improving, self-funding.', cost: [280000] },
-  { id: 'quantum', t2: true, name: 'QUANTUM SUPERPOSITION', d: 'Every launch also fires a twin in the exact opposite direction.', f: 'Take both branches. Collapse neither.', cost: [330000] },
-  { id: 'dyson', t2: true, name: 'POLARITY ENGINE', d: 'Hold G / the GRAVITY button to reverse gravity at will: 2.5 s per shot.', f: 'A Dyson swarm makes a surprisingly good joystick.', cost: [380000] },
-  { id: 'wormhole', t2: true, name: 'WORMHOLE', d: 'When your ball falls into the core, it re-emerges at the furthest point it reached that shot (once per shot).', f: 'The shortest path out is through.', cost: [420000] },
-  { id: 'goo', t2: true, name: 'GRAY GOO', d: 'FOOM stops firing on its own. Store up to 3 charges and detonate one with F / the GOO button: a blast twice as large that converts everything it touches.', f: 'Patience is a terminal value.', cost: [500000] },
+  { id: 'tool', t2: true, name: 'TOOL USE', d: 'During flight, right-click / E / the TOOL button drops a bumper at the cursor that launches your ball. 2 per shot.', f: 'Why move the world when you can build a lever?', cost: [450000] },
+  { id: 'probe', t2: true, name: 'VON NEUMANN PROBES', d: 'Every wall hit has a 20% chance to build a copy of your ball (up to 8 in play).', f: 'Self-replicating, self-improving, self-funding.', cost: [550000] },
+  { id: 'quantum', t2: true, name: 'QUANTUM SUPERPOSITION', d: 'Every launch also fires a twin in the exact opposite direction.', f: 'Take both branches. Collapse neither.', cost: [650000] },
+  { id: 'dyson', t2: true, name: 'POLARITY ENGINE', d: 'Hold G / the GRAVITY button to reverse gravity at will: 2.5 s per shot.', f: 'A Dyson swarm makes a surprisingly good joystick.', cost: [700000] },
+  { id: 'wormhole', t2: true, name: 'WORMHOLE', d: 'When your ball falls into the core, it re-emerges at the furthest point it reached that shot (once per shot).', f: 'The shortest path out is through.', cost: [800000] },
+  { id: 'goo', t2: true, name: 'GRAY GOO', d: 'FOOM stops firing on its own. Store up to 3 charges and detonate one with F / the GOO button: a blast twice as large that converts everything it touches.', f: 'Patience is a terminal value.', cost: [950000] },
 ];
 const isW2 = () => !!(L && L.def.world === 2);
 const KILL_WORDS_W2 = ['clips++', 'atoms→clips', 'Δclips', 'convert()', 'utility↑', 'U(x)=clips', 'acquire()', 'resources++', 'optimize'];
