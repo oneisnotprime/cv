@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>Sign of the Times</title>
+<meta name="description" content="A pixel-art sign-spinning combo game. Chain tricks, keep your balance, don't drop the sign. GLADCO is hiring.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Silkscreen:wght@400;700&family=VT323&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="stage">
+  <canvas id="game" width="320" height="180"></canvas>
+  <div id="hud" hidden>
+    <div class="h-tl">
+      <div id="hDay" class="h-day"></div>
+      <ul id="hGoals" class="goals"></ul>
+    </div>
+    <div class="h-tc">
+      <div id="hTime" class="h-time"></div>
+      <div class="tbar"><i id="hTimeBar"></i></div>
+    </div>
+    <div class="h-tr">
+      <div id="hScore" class="h-score"></div>
+      <div id="hQuota" class="h-quota"></div>
+    </div>
+    <div class="h-bl">
+      <div class="lbl" id="hSpecLbl">SPECIAL</div>
+      <div class="sbar"><i id="hSpecial"></i></div>
+    </div>
+    <div id="hHint" class="hint"></div>
+    <div id="hCombo" class="combo">
+      <div id="hComboList" class="c-list"></div>
+      <div id="hComboPts" class="c-pts"></div>
+    </div>
+    <button id="btnPause" class="icon-btn" type="button" aria-label="Pause">II</button>
+  </div>
+</div>
+
+<div id="pad" hidden>
+  <div class="dpad" id="dpad" aria-label="Balance and trick modifier">
+    <span class="d-u">&#9650;</span><span class="d-l">&#9664;</span><span class="d-r">&#9654;</span><span class="d-d">&#9660;</span>
+    <i class="d-knob" id="dknob"></i>
+  </div>
+  <div class="btns">
+    <button type="button" data-k="special" class="pb pb-sp">SPECIAL</button>
+    <button type="button" data-k="toss" class="pb pb-c">TOSS</button>
+    <button type="button" data-k="spin" class="pb pb-a">SPIN</button>
+    <button type="button" data-k="twirl" class="pb pb-b">TWIRL</button>
+  </div>
+</div>
+
+<div id="overlay" class="ov" hidden></div>
+
+<script src="game.js"></script>
+</body>
+</html>
