@@ -1,0 +1,6 @@
+:root { color-scheme: dark; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: #140b06; }
+body { display: flex; align-items: center; justify-content: center; }
+#game { display: block; image-rendering: crisp-edges; image-rendering: pixelated; }
+#touch-note { display: none; position: fixed; bottom: 8px; left: 16px; right: 16px; margin: 0; text-align: center; font: 14px ui-monospace, monospace; color: #c9975a; }
+@media (pointer: coarse) and (hover: none) { #touch-note { display: block; } }
