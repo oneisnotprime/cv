@@ -209,6 +209,8 @@ stackable|bool|false||can be placed on top of another structure
 spread_rate|num|0|tiles/min|how fast it grows into neighbouring tiles
 persistence|num|0|min|how long it lasts (0 = permanent)
 claim_radius|num|0|tiles|territory it claims for its owner
+placement|enum|self|self,target,sky,region,map|where it appears: at the speller, on a chosen target, overhead, over an area, everywhere
+placement_range|num|0|m|how far from the speller a target or area may be
 """
 GROUPS["social"] = """
 authority|scale|0||NPCs and lesser units obey its owner
@@ -265,6 +267,21 @@ temperature_delta|num|0|C|change to ambient temperature
 visibility|num|1|x|multiplier on all sight ranges
 growth|num|1|x|multiplier on flora and creature growth
 contagion|frac|0||chance per minute it spreads to a neighbour
+sets_daylight|enum|none|none,day,night|forces day or night in its field
+sets_weather|text|||weather it starts in its field
+clears_weather|tags|||weather it ends in its field
+"""
+GROUPS["event"] = """
+event_target|enum|object|object,creature,character,structure,tile,region,faction,map|what the event is dropped on
+event_radius|num|0|m|area around the target it also affects
+event_duration|num|0|min|how long the event runs (0 = instant)
+transfers_ownership|bool|false||the target becomes the speller's
+destroys_target|bool|false||the target is destroyed outright
+contest_with|text|||speller's property that powers the event
+contested_by|text|||target's property that resists it
+sets_hostile|bool|false||everything in the area fights everything not its own
+frees_target|bool|false||the target stops belonging to anyone
+moves_target|num|0|m|distance the target is carried toward the speller
 """
 GROUPS["effect"] = """
 cast_time|num|0|s|delay between spelling and effect
@@ -289,7 +306,7 @@ CLASS_GROUPS = {
     "bodypart": "physical slots mobility offence defence perception".split(),
     "world_state": ["field"], "aura": ["field"], "affliction": ["field", "offence"],
     "knowledge": ["economy", "meta"], "institution": ["social", "economy", "meta"],
-    "measure": ["meta"], "modifier": ["meta"], "spell": ["effect"], "verb_modifier": ["effect"],
+    "event": ["event", "offence", "field"], "measure": ["meta"], "modifier": ["meta"], "spell": ["effect"], "verb_modifier": ["effect"],
 }
 
 # All 26 letters: class and how each is generated.
@@ -334,6 +351,9 @@ ABSOLUTES = {
     "omnipresent": ("none", "field_radius"), "weightless": ("neutral", "mass"),
     "instant": ("none", "cast_time"), "silent": ("neutral", "loudness"),
 }
+# Comparative and superlative forms reuse the base adjective's operations at a higher degree:
+# a multiplier f becomes f ** degree and an added amount a becomes a * degree. Absolutes do not grade.
+DEGREES = {"positive": 1, "comparative": 1.5, "superlative": 2}
 OPERATIONS = {
     "mul": "multiply a numeric property", "add": "add to a numeric property",
     "set": "set a property to a value", "abs": "set a property to ABS",
@@ -387,7 +407,7 @@ def main():
                              "media": MEDIA, "status_effects": STATUS, "properties": props})
     dump("archetypes.json", archetypes)
     dump("letters.json", letters)
-    dump("operators.json", {"operations": OPERATIONS, "absolutes": absolutes,
+    dump("operators.json", {"operations": OPERATIONS, "degrees": DEGREES, "absolutes": absolutes,
                             "unassigned_proof_adjectives": proof})
     print(len(props), dict(by_group)); print("archetypes", len(archetypes))
     print("absolutes", len(absolutes), "missing:", missing, "| other -proof:", proof)

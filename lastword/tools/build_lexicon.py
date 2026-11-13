@@ -3,9 +3,11 @@
 
 usage: build_lexicon.py <wordnet dict dir>      (needs `pip install wordfreq`)
 
-One row per (word, part of speech). Every row lands in exactly one file:
+One row per word, under its most useful role. Every word lands in exactly one file:
   lexicon.tsv  words with a game role          inert.tsv  no role yet
   proper.tsv   names of people/places (excluded)
+Also writes inflections.tsv (comparatives and superlatives).
+overrides.tsv (word, role, optional archetype) wins over the automatic choice.
 """
 import sys, os, re, json, collections
 from wordfreq import zipf_frequency
@@ -68,6 +70,12 @@ ANCHORS = {
     "duration": [("time_unit", 1)],
     "bodypart": [("body_part", 1)],
     "season": [("season", 2)],
+    "crime": [("crime", 1)], "conflict": [("military_action", 1), ("fight", 1)],
+    "attack": [("attack", 1)], "killing": [("killing", 1)],
+    "exchange": [("transaction", 1), ("trade", 1), ("gift", 3)],
+    "destruction": [("destruction", 1)], "disaster": [("calamity", 1)],
+    "contest": [("contest", 1)], "travel": [("travel", 1)], "ceremony": [("ceremony", 1)],
+    "rescue": [("rescue", 1)], "repair": [("repair", 1)], "escape": [("escape", 1)],
 }
 # Fallback when no anchor matches: WordNet category -> (class, archetype). None = inert.
 NOUN = {
@@ -75,7 +83,7 @@ NOUN = {
     "food": ("consumable", "food"), "artifact": ("artifact", "artifact"),
     "substance": ("material", "material"), "object": ("terrain", "natural_object"),
     "location": ("terrain", "place"), "body": ("bodypart", "bodypart"),
-    "phenomenon": ("world_state", "phenomenon"), "event": ("world_state", "event"),
+    "phenomenon": ("world_state", "phenomenon"), "event": ("event", "event"), "act": ("event", "act"),
     "feeling": ("aura", "feeling"), "attribute": ("aura", "attribute"),
     "cognition": ("knowledge", "knowledge"), "group": ("institution", "group"),
     "possession": ("institution", "possession"), "quantity": ("measure", "quantity"),
@@ -92,6 +100,8 @@ ARCH_CLASS = {  # archetype -> class, for archetypes reached through anchors
     **{a: "material" for a in "metal gem mineral liquid gas poison fuel".split()},
     "weather": "world_state", "season": "world_state", "affliction": "affliction", "duration": "measure",
     "bodypart": "bodypart",
+    **{a: "event" for a in "crime conflict attack killing exchange destruction disaster contest "
+       "travel ceremony rescue repair escape".split()},
 }
 VERB = {
     "motion": "movement", "body": "body", "change": "transform", "competition": "combat",
@@ -99,7 +109,30 @@ VERB = {
     "perception": "perceive", "possession": "transfer", "weather": "weather", "social": "social",
 }
 ADJ = {"all": "quality", "pert": "pertaining", "ppl": "participle"}
+ALL_CLASS = {**{a: c for c, a in NOUN.values()}, **ARCH_CLASS, **{v: "spell" for v in VERB.values()},
+             **{a: "modifier" for a in ADJ.values()}, "absolute": "modifier", "manner": "verb_modifier"}
 ROLE = {"n": "noun", "v": "verb", "a": "adjective", "r": "adverb"}
+CONCRETE = {"artifact", "creature", "person", "flora", "terrain", "material", "consumable", "bodypart"}
+# How useful a role is in play; multiplied by how often the word is used that way.
+WEIGHT = lambda cls: (4 if cls in CONCRETE else 3 if cls == "event" else 1 if cls == "spell"
+                      else 0.5 if cls == "verb_modifier" else 0.1 if cls == "inert" else 2)
+IRREGULAR = {"good": ("better", "best"), "bad": ("worse", "worst"), "far": ("farther", "farthest"),
+             "little": ("less", "least"), "much": ("more", "most"), "many": ("more", "most")}
+
+def degrees(w):
+    """Regular comparative and superlative of an adjective."""
+    if w in IRREGULAR:
+        return IRREGULAR[w]
+    V = "aeiou"
+    if w.endswith("e"):
+        stem = w[:-1]
+    elif w.endswith("y") and len(w) > 2 and w[-2] not in V:
+        stem = w[:-1] + "i"
+    elif len(w) >= 3 and w[-1] not in V + "wxy" and w[-2] in V and w[-3] not in V and len(re.findall("[aeiou]+", w)) == 1:
+        stem = w + w[-1]
+    else:
+        stem = w
+    return stem + "er", stem + "est"
 
 def tier(z):
     return "core" if z >= 4 else "common" if z >= 3 else "uncommon" if z >= 2 else "rare" if z > 0 else "obscure"
@@ -120,46 +153,87 @@ def main(dict_dir):
 
     def is_proper(s, lemma):
         forms = [w for w in s.words if w.lower() == lemma]
-        return s.instance or (forms and all(w != w.lower() for w in forms))
+        return bool(forms) and all(w != w.lower() for w in forms)
+
+    over = {}
+    for line in list(open(os.path.join(OUT, "overrides.tsv")))[1:]:
+        w, role, arch = (line.rstrip("\n").split("\t") + [""])[:3]
+        over[w] = (role, arch)
+
+    def cands_generic(cands):
+        """True when an earlier sense was only a generic act, so a concrete sense may outrank it."""
+        return any(c[1][1] == "act" for c in cands)
+
+    def options(lemma):
+        """Every role the word could take: (score, role, class, archetype, synset)."""
+        out = []
+        for pos in wn.index[lemma]:
+            senses = wn.senses(lemma, pos)
+            common = [s for s in senses if not (pos == "n" and is_proper(s, lemma))]
+            if not common:
+                cat = senses[0].lex.split(".")[1]      # days and months are inert, other names excluded
+                out.append((0.01 if cat == "time" else 0, "noun", "inert" if cat == "time" else "proper", cat, "n" + senses[0].offset))
+                continue
+            cands = []
+            for i, s in enumerate(common[:3]):
+                cat = s.lex.split(".")[1]
+                if pos == "n":
+                    hit = noun_arch(s)
+                elif pos == "v":
+                    hit = ("spell", VERB[cat]) if cat in VERB else None
+                elif pos == "a":
+                    hit = ("modifier", ADJ[cat])
+                else:
+                    hit = ("verb_modifier", "manner")
+                hit = hit or ("inert", cat)
+                rank = 0 if hit[0] == "inert" else 1 if hit[1] == "act" else 2 if hit[0] not in CONCRETE or cands_generic(cands) is False else 3
+                cands.append((rank * 10 - i, hit, s))
+            if lemma in over and over[lemma][1]:        # an override may name the archetype wanted
+                for s in common:
+                    hit = noun_arch(s) if pos == "n" else None
+                    if hit and hit[1] == over[lemma][1]:
+                        cands = [(99, hit, s)]
+                        break
+            if lemma in over and over[lemma][1] and over[lemma][0] == ROLE[pos] and cands[0][0] != 99:
+                arch = over[lemma][1]                   # no sense has it: force the archetype
+                cands = [(99, (ALL_CLASS[arch], arch), common[0])]
+            w8, hit, s = max(cands, key=lambda c: c[0])
+            score = WEIGHT(hit[0]) * (wn.tags.get((lemma, pos), 0) + 2)
+            if lemma in over and over[lemma][0] == ROLE[pos]:
+                score = 1e9
+            out.append((score, ROLE[pos], hit[0], hit[1], pos + s.offset))
+        return sorted(out, key=lambda o: -o[0])
 
     rows = {"lexicon": [], "inert": [], "proper": []}
     for lemma in sorted(wn.index):
         if not re.fullmatch(r"[a-z]{2,}", lemma):
             continue
         z = round(zipf_frequency(lemma, "en"), 2)
-        for pos in sorted(wn.index[lemma], key=lambda p: -wn.tags.get((lemma, p), 0)):
-            senses = wn.senses(lemma, pos)
-            common = [s for s in senses if not (pos == "n" and is_proper(s, lemma))]
-            if not common:
-                rows["proper"].append((lemma, "noun", "proper", senses[0].lex.split(".")[1], z, tier(z), "n" + senses[0].offset))
-                continue
-            pick, hit = common[0], None
-            if pos == "n":                      # first of the top 3 senses that has a role
-                for s in common[:3]:
-                    hit = noun_arch(s)
-                    if hit:
-                        pick = s
-                        break
-            elif pos == "v":
-                for s in common[:3]:
-                    c = VERB.get(s.lex.split(".")[1])
-                    if c:
-                        pick, hit = s, ("spell", c)
-                        break
-            elif pos == "a":
-                hit = ("modifier", ADJ[pick.lex.split(".")[1]])
-            else:
-                hit = ("verb_modifier", "manner")
-            cat = pick.lex.split(".")[1]
-            rec = (lemma, ROLE[pos]) + (hit or ("inert", cat)) + (z, tier(z), pos + pick.offset)
-            rows["lexicon" if hit else "inert"].append(rec)
+        opts = options(lemma)
+        _, role, cls, arch, syn = opts[0]
+        others = ",".join(f"{o[1]}:{o[3]}" for o in opts[1:]) or "-"
+        rec = (lemma, role, cls, arch, z, tier(z), syn, others)
+        rows["proper" if cls == "proper" else "inert" if cls == "inert" else "lexicon"].append(rec)
 
-    head = "word\trole\tclass\tarchetype\tzipf\ttier\tsynset\n"
+    head = "word\trole\tclass\tarchetype\tzipf\ttier\tsynset\tother_roles\n"
     for name, rs in rows.items():
         with open(os.path.join(OUT, name + ".tsv"), "w") as f:
             f.write(head)
             for r in rs:
                 f.write("\t".join(map(str, r)) + "\n")
+
+    # Comparatives and superlatives of common adjectives, kept only if they are real words.
+    headwords = {r[0] for rs in rows.values() for r in rs}
+    infl = []
+    for r in rows["lexicon"]:
+        if r[1] == "adjective" and r[4] >= 3 and (len(re.findall("[aeiouy]+", r[0])) <= 2 or r[0] in IRREGULAR):
+            for kind, form in zip(("comparative", "superlative"), degrees(r[0])):
+                if zipf_frequency(form, "en") >= 2:
+                    infl.append((form, r[0], kind, "yes" if form in headwords else "no"))
+    with open(os.path.join(OUT, "inflections.tsv"), "w") as f:
+        f.write("form\tbase\tdegree\talso_headword\n")
+        for r in infl:
+            f.write("\t".join(r) + "\n")
 
     # Demo subset: very common, short, concrete or directly usable.
     keep = {"noun": (4.6, {"artifact", "creature", "terrain", "consumable", "flora", "person", "material", "bodypart"}),
@@ -175,7 +249,7 @@ def main(dict_dir):
     count = lambda rs, i: dict(collections.Counter(r[i] for r in rs).most_common())
     stats = {
         "words": len({r[0] for rs in rows.values() for r in rs}),
-        "rows": {k: len(v) for k, v in rows.items()}, "demo": len(demo),
+        "rows": {k: len(v) for k, v in rows.items()}, "demo_candidates": len(demo), "inflections": len(infl),
         "lexicon_by_role": count(rows["lexicon"], 1), "lexicon_by_class": count(rows["lexicon"], 2),
         "lexicon_by_tier": count(rows["lexicon"], 5),
         "noun_archetypes": count([r for r in rows["lexicon"] if r[1] == "noun"], 3),

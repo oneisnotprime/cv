@@ -8,6 +8,11 @@
   "untag": "remove a tag",
   "reset": "return a property to its default"
  },
+ "degrees": {
+  "positive": 1,
+  "comparative": 1.5,
+  "superlative": 2
+ },
  "absolutes": [
   {
    "word": "irresistible",
@@ -88,21 +93,6 @@
    "word": "undetectable",
    "side": "defence",
    "property": "stealth"
-  },
-  {
-   "word": "untouchable",
-   "side": "defence",
-   "property": "untargetable"
-  },
-  {
-   "word": "intangible",
-   "side": "defence",
-   "property": "evasion"
-  },
-  {
-   "word": "immovable",
-   "side": "defence",
-   "property": "mass"
   },
   {
    "word": "fearless",
@@ -214,7 +204,6 @@
   "leakproof",
   "lightproof",
   "mothproof",
-  "proof",
   "rainproof",
   "runproof",
   "shatterproof",

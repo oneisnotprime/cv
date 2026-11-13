@@ -1,5 +1,5 @@
 {
- "count": 334,
+ "count": 349,
  "groups": {
   "physical": 41,
   "mobility": 25,
@@ -8,11 +8,12 @@
   "perception": 14,
   "life": 27,
   "economy": 46,
-  "spatial": 17,
+  "spatial": 19,
   "social": 12,
   "slots": 9,
   "meta": 16,
-  "field": 11,
+  "field": 14,
+  "event": 10,
   "effect": 8
  },
  "damage_types": [
@@ -2203,6 +2204,28 @@
    "default": 0
   },
   {
+   "id": "placement",
+   "group": "spatial",
+   "type": "enum",
+   "desc": "where it appears: at the speller, on a chosen target, overhead, over an area, everywhere",
+   "values": [
+    "self",
+    "target",
+    "sky",
+    "region",
+    "map"
+   ],
+   "default": "self"
+  },
+  {
+   "id": "placement_range",
+   "group": "spatial",
+   "type": "num",
+   "desc": "how far from the speller a target or area may be",
+   "unit": "m",
+   "default": 0
+  },
+  {
    "id": "authority",
    "group": "social",
    "type": "scale",
@@ -2581,6 +2604,115 @@
    "group": "field",
    "type": "frac",
    "desc": "chance per minute it spreads to a neighbour",
+   "default": 0
+  },
+  {
+   "id": "sets_daylight",
+   "group": "field",
+   "type": "enum",
+   "desc": "forces day or night in its field",
+   "values": [
+    "none",
+    "day",
+    "night"
+   ],
+   "default": "none"
+  },
+  {
+   "id": "sets_weather",
+   "group": "field",
+   "type": "text",
+   "desc": "weather it starts in its field",
+   "default": ""
+  },
+  {
+   "id": "clears_weather",
+   "group": "field",
+   "type": "tags",
+   "desc": "weather it ends in its field",
+   "default": []
+  },
+  {
+   "id": "event_target",
+   "group": "event",
+   "type": "enum",
+   "desc": "what the event is dropped on",
+   "values": [
+    "object",
+    "creature",
+    "character",
+    "structure",
+    "tile",
+    "region",
+    "faction",
+    "map"
+   ],
+   "default": "object"
+  },
+  {
+   "id": "event_radius",
+   "group": "event",
+   "type": "num",
+   "desc": "area around the target it also affects",
+   "unit": "m",
+   "default": 0
+  },
+  {
+   "id": "event_duration",
+   "group": "event",
+   "type": "num",
+   "desc": "how long the event runs (0 = instant)",
+   "unit": "min",
+   "default": 0
+  },
+  {
+   "id": "transfers_ownership",
+   "group": "event",
+   "type": "bool",
+   "desc": "the target becomes the speller's",
+   "default": false
+  },
+  {
+   "id": "destroys_target",
+   "group": "event",
+   "type": "bool",
+   "desc": "the target is destroyed outright",
+   "default": false
+  },
+  {
+   "id": "contest_with",
+   "group": "event",
+   "type": "text",
+   "desc": "speller's property that powers the event",
+   "default": ""
+  },
+  {
+   "id": "contested_by",
+   "group": "event",
+   "type": "text",
+   "desc": "target's property that resists it",
+   "default": ""
+  },
+  {
+   "id": "sets_hostile",
+   "group": "event",
+   "type": "bool",
+   "desc": "everything in the area fights everything not its own",
+   "default": false
+  },
+  {
+   "id": "frees_target",
+   "group": "event",
+   "type": "bool",
+   "desc": "the target stops belonging to anyone",
+   "default": false
+  },
+  {
+   "id": "moves_target",
+   "group": "event",
+   "type": "num",
+   "desc": "distance the target is carried toward the speller",
+   "unit": "m",
    "default": 0
   },
   {
