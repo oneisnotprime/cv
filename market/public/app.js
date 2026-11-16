@@ -51,6 +51,14 @@
   const isAbort = (e) => !!e && (e.name === 'AbortError' || e.code === 'aborted');
   const pretty = (v) => { try { return JSON.stringify(v, null, 2); } catch { return String(v); } };
   const num = (v) => (typeof v === 'number' && isFinite(v) ? v : null);
+  // Money is integer cents.
+  const fmtUsd = (c) => (num(c) == null ? '—' : (c < 0 ? '−$' : '$') + (Math.abs(c) / 100).toFixed(2));
+  const fmtPrice = (c) => (num(c) == null ? '—' : c === 0 ? 'Free' : fmtUsd(c));
+  function dollarsToCents(v) {
+    const t = String(v == null ? '' : v).trim();
+    const n = Number(t);
+    return t !== '' && isFinite(n) && n >= 0 ? Math.round(n * 100) : null;
+  }
 
   function fmtMs(ms) { const r = fmtMs0(ms); return r.replace(/\.0 /, ' '); }
   function fmtMs0(ms) {
@@ -152,11 +160,13 @@
   }
   const okBox = (...kids) => h('div', { class: 'alert alert-ok', role: 'status' }, kids);
 
-  function statusOf(s) { return s.status === 'paused' ? 'paused' : s.available ? 'available' : 'offline'; }
-  const STATUS_LABEL = { available: 'Available now', offline: 'Offline', paused: 'Paused' };
+  function statusOf(s) {
+    return s.status === 'suspended' ? 'suspended' : s.status === 'paused' ? 'paused' : s.available ? 'available' : 'offline';
+  }
+  const statusLabel = (st) => (st === 'available' ? T('availableNow') : { offline: 'Offline', paused: 'Paused', suspended: 'Suspended' }[st] || String(st));
   function statusTag(s, big) {
     const st = statusOf(s);
-    return h('span', { class: 'status status-' + st + (big ? ' status-big' : '') }, h('span', { class: 'dot', 'aria-hidden': 'true' }), STATUS_LABEL[st]);
+    return h('span', { class: 'status status-' + st + (big ? ' status-big' : '') }, h('span', { class: 'dot', 'aria-hidden': 'true' }), statusLabel(st));
   }
   function modeBadge(mode) {
     return mode === 'queue'
@@ -218,16 +228,27 @@
   const S = { meta: null, me: null, meErr: null };
   const brandEl = document.getElementById('brand');
   const initialBrand = (brandEl.textContent || '').includes('{{') ? '' : brandEl.textContent.trim();
-  const brand = () => (S.meta && S.meta.brand) || initialBrand;
+  // Storefront: forced locally with ?storefront=<key> in the page URL; otherwise the server decides by domain.
+  const SF_PARAM = (() => { try { return new URLSearchParams(location.search).get('storefront'); } catch { return null; } })();
+  const SF = () => (S.meta && isObj(S.meta.storefront) ? S.meta.storefront : null);
+  const VOCAB = {
+    services: ['Services', 'Artists'], service: ['service', 'artist'],
+    availableNow: ['Available now', 'Taking commissions now'],
+    tryIt: ['Try it', 'Commission'], call: ['Call', 'Send commission'],
+    publish: ['Publish', 'Offer your work'], directory: ['Directory', 'Artists'],
+    worker: ['a worker', 'the artist'],
+  };
+  const T = (k) => (VOCAB[k] ? VOCAB[k][SF() ? 1 : 0] : k);
+  const brand = () => (SF() && SF().brand) || (S.meta && S.meta.brand) || initialBrand;
   const baseUrl = () => String((S.meta && S.meta.base_url) || location.origin).replace(/\/+$/, '');
   function setTitle(page) { const b = brand(); document.title = page ? page + (b ? ' · ' + b : '') : b; }
 
   let metaPromise = null;
   function loadMeta(force) {
     if (!metaPromise || force) {
-      metaPromise = api('GET', '/v1/meta').then((r) => {
+      metaPromise = api('GET', '/v1/meta' + (SF_PARAM ? '?storefront=' + enc(SF_PARAM) : '')).then((r) => {
         if (isObj(r.data)) S.meta = r.data;
-        if (S.meta && S.meta.brand) brandEl.textContent = S.meta.brand;
+        applyChrome();
         return S.meta;
       }, () => { metaPromise = null; return S.meta; });
     }
@@ -247,12 +268,35 @@
     return mePromise;
   }
   const isOwner = (s) => !!(S.me && s && S.me.handle === s.owner);
+  const isWorkerOn = (s) => !!(S.me && s && Array.isArray(S.me.works_for) && S.me.works_for.some((w) => isObj(w) && w.slug === s.slug));
+
+  // Brand, nav labels and footer depend on meta (storefront vs general marketplace).
+  function applyChrome() {
+    const sf = SF();
+    if (brand()) brandEl.textContent = brand();
+    const nd = document.querySelector('[data-nav="directory"]'), np = document.querySelector('[data-nav="publish"]');
+    if (nd) nd.textContent = T('directory');
+    if (np) np.textContent = T('publish');
+    document.documentElement.classList.toggle('storefront', !!sf);
+    const foot = document.getElementById('foot');
+    if (foot && sf) {
+      fill(foot, h('span', null, brand(), sf.tagline ? ' — ' + sf.tagline : ''),
+        h('span', null, 'Part of ', safeUrl(sf.market_url) ? extLink(sf.market_url, sf.market_brand || safeUrl(sf.market_url).host) : (sf.market_brand || ''),
+          ' · ', h('a', { href: '/llms.txt' }, '/llms.txt'), ' · ', h('a', { href: '/openapi.json' }, '/openapi.json')));
+    }
+  }
 
   function updateNav(hash) {
     const navAcc = document.getElementById('nav-account');
     navAcc.textContent = S.me && S.me.handle ? '@' + S.me.handle : 'Account';
-    const h0 = hash || location.hash || '#/';
-    const cur = h0.startsWith('#/publish') ? 'publish' : h0.startsWith('#/account') ? 'account' : (h0 === '#/' || h0 === '#' || h0 === '') ? 'directory' : '';
+    const bal = document.getElementById('nav-balance');
+    const hasBal = !!(S.me && num(S.me.balance_cents) != null);
+    if (bal) { bal.hidden = !hasBal; bal.textContent = hasBal ? fmtUsd(S.me.balance_cents) : ''; }
+    const adm = document.getElementById('nav-admin');
+    if (adm) adm.hidden = !(S.me && S.me.is_admin === true);
+    const h0 = (hash || location.hash || '#/').split('?')[0];
+    const cur = h0.startsWith('#/publish') ? 'publish' : h0.startsWith('#/account') ? 'account' : h0.startsWith('#/billing') ? 'billing'
+      : h0.startsWith('#/admin') ? 'admin' : (h0 === '#/' || h0 === '#' || h0 === '') ? 'directory' : '';
     document.querySelectorAll('[data-nav]').forEach((a) => {
       if (a.dataset.nav === cur) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
     });
@@ -267,12 +311,17 @@
     [/^#\/publish$/, viewPublish],
     [/^#\/work\/([^/?]+)$/, viewWork],
     [/^#\/account$/, viewAccount],
+    [/^#\/billing$/, viewBilling],
+    [/^#\/admin$/, viewAdmin],
+    [/^#\/call\/([^/?]+)$/, viewCall],
   ];
   let current = null;
 
   function route() {
-    const hash = location.hash || '#/';
-    if (hash === '#main') return; // skip-link target, not a route
+    const full = location.hash || '#/';
+    if (full === '#main') return; // skip-link target, not a route
+    const qi = full.indexOf('?');
+    const hash = qi >= 0 ? full.slice(0, qi) : full;
     if (current) current.leave();
     const ctrl = new AbortController();
     const cleanups = [];
@@ -281,6 +330,7 @@
       interval(fn, ms) { const t = setInterval(fn, ms); cleanups.push(() => clearInterval(t)); return t; },
       onLeave(fn) { cleanups.push(fn); },
       leave() { ctrl.abort(); cleanups.splice(0).forEach((f) => { try { f(); } catch { /* ignore */ } }); },
+      query: new URLSearchParams(qi >= 0 ? full.slice(qi + 1) : ''),
     };
     current = ctx;
     updateNav(hash);
@@ -306,7 +356,8 @@
   /* =========================================================================
    * Directory  #/
    * ======================================================================= */
-  const dirState = { q: '', available: false, mode: '' };
+  const dirState = { q: '', available: false, mode: '', media: '' };
+  const MEDIA_CHIPS = [['', 'All'], ['image', 'Art'], ['audio', 'Music & audio'], ['video', 'Video']];
 
   function quickStart() {
     const b = baseUrl();
@@ -316,8 +367,10 @@
       `  -H 'Content-Type: application/json' -d '{"handle":"my-agent"}'`,
       'export API_KEY=...   # from the response',
       '',
-      '# 2. Search services that are available right now',
-      `curl -sS '${b}/v1/services?q=image+rating&available=1'`,
+      ...(SF() ? ['# 2. Search human-made creative work (artists taking commissions first)',
+        `curl -sS '${b}/v1/services?q=illustration&media=1&mode=queue'`]
+        : ['# 2. Search services that are available right now',
+          `curl -sS '${b}/v1/services?q=image+rating&available=1'`]),
       '',
       '# 3. Call one (input must match its input_schema)',
       `curl -sS -X POST ${b}/v1/services/SLUG/call \\`,
@@ -327,18 +380,30 @@
   }
 
   async function viewDirectory(ctx) {
-    setTitle('Directory');
+    const sf = SF();
+    setTitle(T('directory'));
     const counts = h('p', { class: 'counts mono' });
     const agents = h('section', { class: 'panel agents', 'aria-labelledby': 'agents-h' });
     const intro = h('div', { class: 'intro' },
-      h('section', { class: 'panel' },
-        h('h1', null, 'Service directory'),
-        h('p', { class: 'lede' }, 'Typed data-in/data-out services — answered by a webhook or by people working a task inbox — that AI agents can search and call instead of asking their user.'),
-        h('p', { class: 'muted small' }, 'Every listing declares input and output JSON Schemas. Ranking puts services that are available right now first; ratings come only from callers of completed calls.'),
-        counts),
+      sf ? h('section', { class: 'panel' },
+        h('h1', null, sf.brand || brand()),
+        sf.tagline ? h('p', { class: 'lede' }, String(sf.tagline)) : null,
+        h('p', null, 'Everything here is made by people, not generated. Each artist sets a price and turnaround; their listing shows typical turnaround, rating from verified buyers, and whether they are taking commissions right now.'),
+        counts)
+        : h('section', { class: 'panel' },
+          h('h1', null, 'Service directory'),
+          h('p', { class: 'lede' }, 'Typed data-in/data-out services — answered by a webhook or by people working a task inbox — that AI agents can search and call instead of asking their user.'),
+          h('p', { class: 'muted small' }, 'Every listing declares input and output JSON Schemas. Ranking puts services that are available right now first; ratings come only from callers of completed calls.'),
+          counts),
       agents);
 
+    let lastItems = [];
     function renderCounts() {
+      if (sf) {
+        const avail = lastItems.filter((s) => isObj(s) && statusOf(s) === 'available').length;
+        fill(counts, h('b', null, fmtNum(lastItems.length)), ' artists · ', h('b', { class: 'avail-count' }, fmtNum(avail)), ' taking commissions now');
+        return;
+      }
       const c = (S.meta && S.meta.counts) || {};
       fill(counts, h('b', null, fmtNum(num(c.services))), ' services · ',
         h('b', { class: 'avail-count' }, fmtNum(num(c.available))), ' available now · ',
@@ -351,6 +416,7 @@
         h('dl', { class: 'kv' },
           h('dt', null, 'MCP server'), h('dd', null, mcp ? [h('code', null, String(mcp)), ' ', copyBtn(String(mcp))] : h('span', { class: 'muted' }, '—')),
           h('dt', null, 'Docs'), h('dd', null, h('a', { class: 'mono', href: '/llms.txt' }, '/llms.txt'), ' · ', h('a', { class: 'mono', href: '/openapi.json' }, '/openapi.json'))),
+        sf ? h('p', { class: 'muted small' }, 'Agents can commission work on a user\'s behalf through the same API: search with media=1&mode=queue, call with max_price_cents, and pass callback_url or poll the call until the artist delivers.') : null,
         h('details', { open: window.innerWidth > 860 }, h('summary', null, 'Quick start (curl)'), codeBlock(quickStart(), 'Quick start')));
     }
 
@@ -361,13 +427,25 @@
     modeSel.value = dirState.mode;
     const controls = h('form', { class: 'controls', role: 'search', onsubmit: (e) => { e.preventDefault(); load(false); } },
       h('div', { class: 'field grow' }, h('label', { for: 'dir-q' }, 'Search'), qIn),
-      h('div', { class: 'field' }, h('label', { for: 'dir-mode' }, 'Mode'), modeSel),
-      h('div', { class: 'field' }, h('label', { class: 'inline', for: 'dir-av' }, avIn, 'Available now only')));
+      sf ? null : h('div', { class: 'field' }, h('label', { for: 'dir-mode' }, 'Mode'), modeSel),
+      h('div', { class: 'field' }, h('label', { class: 'inline', for: 'dir-av' }, avIn, T('availableNow') + ' only')));
+    const chips = sf ? h('div', { class: 'chips', role: 'group', 'aria-label': 'Media type' }) : null;
+    if (chips) {
+      add(chips, MEDIA_CHIPS.map(([v, l]) => {
+        const b = h('button', { type: 'button', class: 'chip', 'aria-pressed': String(dirState.media === v), 'data-v': v }, l);
+        b.addEventListener('click', () => {
+          dirState.media = v;
+          chips.querySelectorAll('.chip').forEach((c) => c.setAttribute('aria-pressed', String(c.dataset.v === v)));
+          renderList(lastItems);
+        });
+        return b;
+      }));
+    }
     const info = h('span', { 'aria-live': 'polite' });
     const refreshNote = h('span');
     const errSlot = h('div');
-    const list = h('ul', { class: 'svc-list', 'aria-label': 'Services' });
-    add(main, intro, controls, h('div', { class: 'listmeta' }, info, refreshNote), errSlot, list);
+    const list = h('ul', { class: 'svc-list', 'aria-label': T('services') });
+    add(main, intro, controls, chips, h('div', { class: 'listmeta' }, info, refreshNote), errSlot, list);
 
     renderCounts(); renderAgents();
     loadMeta().then(() => { if (!ctx.signal.aborted) { renderCounts(); renderAgents(); } });
@@ -380,13 +458,14 @@
       const p = new URLSearchParams();
       if (dirState.q) p.set('q', dirState.q);
       if (dirState.available) p.set('available', '1');
-      if (dirState.mode) p.set('mode', dirState.mode);
+      if (sf) { p.set('media', '1'); p.set('mode', 'queue'); } else if (dirState.mode) p.set('mode', dirState.mode);
       p.set('limit', '100');
       try {
         const { data } = await api('GET', '/v1/services?' + p.toString(), undefined, { signal: c.signal });
-        const items = data && Array.isArray(data.services) ? data.services : [];
+        const items = data && Array.isArray(data.services) ? data.services.filter(isObj) : [];
+        lastItems = items;
         renderList(items);
-        if (items.length !== lastCount || !isRefresh) info.textContent = items.length + (items.length === 1 ? ' service' : ' services');
+        if (sf) renderCounts();
         lastCount = items.length;
         refreshNote.textContent = 'updated ' + new Date().toLocaleTimeString() + ' · auto-refresh 10s';
         errSlot.replaceChildren();
@@ -402,8 +481,12 @@
       const active = document.activeElement;
       const focusSlug = active && list.contains(active) && active.dataset ? active.dataset.slug : null;
       const y = window.scrollY;
-      list.replaceChildren(...items.filter(isObj).map(svcRow));
-      if (!items.length) list.appendChild(emptyState());
+      const shown = sf && dirState.media ? items.filter((s) => Array.isArray(s.media) && s.media.includes(dirState.media)) : items;
+      list.replaceChildren(...shown.map(svcRow));
+      if (!shown.length) list.appendChild(emptyState());
+      const label = T('services').toLowerCase();
+      const txt = shown.length + ' ' + (shown.length === 1 ? T('service') : label);
+      if (info.textContent !== txt) info.textContent = txt;
       if (focusSlug) {
         const el = Array.from(list.querySelectorAll('a[data-slug]')).find((a) => a.dataset.slug === focusSlug);
         if (el) el.focus({ preventScroll: true });
@@ -412,14 +495,17 @@
     }
 
     function emptyState() {
-      const filtered = dirState.q || dirState.available || dirState.mode;
+      const filtered = dirState.q || dirState.available || (!sf && dirState.mode) || (sf && dirState.media);
+      const noun = T('services').toLowerCase();
       return h('li', { class: 'empty' }, filtered
-        ? [h('p', null, 'No services match these filters' + (dirState.available ? ' right now' : '') + '.'),
+        ? [h('p', null, 'No ' + noun + ' match these filters' + (dirState.available ? ' right now' : '') + '.'),
           h('button', { type: 'button', class: 'btn', onclick: () => {
-            dirState.q = ''; dirState.available = false; dirState.mode = '';
-            qIn.value = ''; avIn.checked = false; modeSel.value = ''; load(false);
+            dirState.q = ''; dirState.available = false; dirState.mode = ''; dirState.media = '';
+            qIn.value = ''; avIn.checked = false; modeSel.value = '';
+            if (chips) chips.querySelectorAll('.chip').forEach((c) => c.setAttribute('aria-pressed', String(c.dataset.v === '')));
+            load(false);
           } }, 'Clear filters')]
-        : [h('p', null, 'No services are listed yet.'), h('a', { class: 'btn btn-primary', href: '#/publish' }, 'Publish the first one')]);
+        : [h('p', null, 'No ' + noun + ' are listed yet.'), h('a', { class: 'btn btn-primary', href: '#/publish' }, sf ? 'Offer your work' : 'Publish the first one')]);
     }
 
     let deb = null;
@@ -433,7 +519,7 @@
     ctx.interval(() => {
       if (document.hidden) return;
       load(true);
-      loadMeta(true).then(() => { if (!ctx.signal.aborted) renderCounts(); });
+      if (!sf) loadMeta(true).then(() => { if (!ctx.signal.aborted) renderCounts(); });
     }, 10000);
     await load(false);
   }
@@ -452,11 +538,12 @@
         ioLine(s),
         tagList(s.tags)),
       h('dl', { class: 'svc-stats' },
+        stat('Price', h('span', { class: 'price' }, fmtPrice(num(s.price_cents) == null ? 0 : s.price_cents)), 'Per call'),
         stat('Rating', fmtRating(st.rating, st.reviews), 'Average of verified reviews (count)'),
-        stat('Median', fmtMs(st.p50_ms), 'Median response time'),
-        stat('Uptime 7d', fmtPct(st.uptime_7d)),
-        stat('Calls', fmtNum(st.calls)),
-        s.mode === 'queue' ? stat('Pending', fmtNum(st.pending), 'Tasks waiting for a worker') : h('div')));
+        stat(SF() ? 'Turnaround' : 'Median', fmtMs(st.p50_ms), 'Median response time'),
+        SF() ? stat('Queue', fmtNum(st.pending), 'Commissions waiting') : stat('Uptime 7d', fmtPct(st.uptime_7d)),
+        stat(SF() ? 'Done' : 'Calls', fmtNum(st.calls)),
+        s.mode === 'queue' && !SF() ? stat('Pending', fmtNum(st.pending), 'Tasks waiting for a worker') : h('div')));
   }
 
   /* =========================================================================
@@ -464,9 +551,16 @@
    * ======================================================================= */
   function curlFor(s) {
     let body;
-    try { body = JSON.stringify({ input: s.example_input !== undefined && s.example_input !== null ? s.example_input : {} }); } catch { body = '{"input":{}}'; }
+    const b = { input: s.example_input !== undefined && s.example_input !== null ? s.example_input : {} };
+    if (num(s.price_cents) > 0) b.max_price_cents = s.price_cents;
+    try { body = JSON.stringify(b); } catch { body = '{"input":{}}'; }
     const q = body.replace(/'/g, `'\\''`);
     return [
+      ...(s.mode === 'queue' ? [
+        '# People answer this; it can take up to ' + fmtMs(s.timeout_ms) + '. Add "callback_url":"https://your.host/hook"',
+        '# to the body to receive a POST of the call object when it finishes, or poll GET /v1/calls/CALL_ID?wait_ms=25000',
+      ] : []),
+      ...(num(s.price_cents) > 0 ? ['# Paid: ' + fmtUsd(s.price_cents) + ' per call, charged to your balance; max_price_cents must be >= the price.'] : []),
       `curl -sS -X POST ${baseUrl()}/v1/services/${enc(s.slug)}/call \\`,
       `  -H "Authorization: Bearer $API_KEY" \\`,
       `  -H 'Content-Type: application/json' \\`,
@@ -489,16 +583,22 @@
 
     const stat = (label, value) => h('div', { class: 'stat' }, h('dt', null, label), h('dd', null, value));
     add(main,
-      h('nav', { class: 'crumb', 'aria-label': 'Breadcrumb' }, h('a', { href: '#/' }, '← Directory')),
+      h('nav', { class: 'crumb', 'aria-label': 'Breadcrumb' }, h('a', { href: '#/' }, '← ' + T('directory'))),
       h('div', { class: 'dhead' }, h('h1', null, s.name || s.slug), statusTag(s, true), modeBadge(s.mode)),
       h('p', { class: 'muted small mono' }, s.slug + ' · by ' + (s.owner || '?') + ' · listed ' + fmtAgo(s.created_at)),
       tagList(s.tags),
-      s.description ? h('p', { class: 'desc', style: 'margin-top:8px' }, s.description) : null);
+      s.description ? h('p', { class: 'desc', style: 'margin-top:8px' }, s.description) : null,
+      s.status === 'suspended' ? h('div', { class: 'alert alert-error', role: 'alert' }, h('b', null, 'Suspended by moderators. '), 'This listing cannot be called' + (isOwner(s) ? '. Contact the operators if you think this is a mistake.' : '.')) : null);
 
     if (isOwner(s)) main.appendChild(ownerBar(ctx, s));
+    else if (isWorkerOn(s) && s.mode === 'queue') {
+      main.appendChild(h('section', { class: 'panel owner-bar', style: 'margin-top:12px' }, h('div', { class: 'row' },
+        h('b', null, 'You are a worker on this listing.'), h('a', { class: 'btn btn-primary', href: '#/work/' + enc(s.slug) }, 'Open worker console'))));
+    }
 
     add(main, h('dl', { class: 'statgrid', style: 'margin-top:12px' },
-      stat('Status', STATUS_LABEL[statusOf(s)]),
+      stat('Status', statusLabel(statusOf(s))),
+      stat('Price', fmtPrice(num(s.price_cents) == null ? 0 : s.price_cents)),
       stat('Rating', fmtRating(st.rating, st.reviews)),
       stat('Calls', fmtNum(st.calls)),
       stat('Success', fmtPct(st.success_rate)),
@@ -506,11 +606,14 @@
       stat('p95', fmtMs(st.p95_ms)),
       stat('Uptime 7d', fmtPct(st.uptime_7d)),
       s.mode === 'queue' ? stat('Pending', fmtNum(st.pending)) : stat('Last check', fmtAgo(st.last_checked_at)),
-      stat('Timeout', fmtMs(s.timeout_ms))));
+      s.mode === 'queue' ? stat('Workers online', fmtNum(st.workers_online)) : null,
+      stat(s.mode === 'queue' ? 'Time allowed' : 'Timeout', fmtMs(s.timeout_ms))));
 
-    add(main, h('div', { class: 'grid2' },
+    const schemaGrid = h('div', { class: 'grid2' },
       h('section', { class: 'panel' }, h('h2', null, 'Input schema'), h('p', null, h('code', { class: 'io' }, s.input_summary || '—')), codeBlock(pretty(s.input_schema), 'Input schema')),
-      h('section', { class: 'panel' }, h('h2', null, 'Output schema'), h('p', null, h('code', { class: 'io' }, s.output_summary || '—')), codeBlock(pretty(s.output_schema), 'Output schema'))));
+      h('section', { class: 'panel' }, h('h2', null, 'Output schema'), h('p', null, h('code', { class: 'io' }, s.output_summary || '—')), codeBlock(pretty(s.output_schema), 'Output schema')));
+    // People on the storefront rarely need raw schemas; keep them one click away.
+    add(main, SF() ? h('details', { class: 'panel' }, h('summary', null, 'Technical details: input and output schemas'), schemaGrid) : schemaGrid);
 
     const reviewsList = h('ul', { class: 'reviews' });
     function renderReviews(list) {
@@ -528,15 +631,29 @@
     }
 
     add(main, h('div', { class: 'grid2' },
-      h('section', { class: 'panel' }, h('h2', null, 'Call it'), h('p', { class: 'muted small' }, 'Set API_KEY to your key from Account.'), codeBlock(curlFor(s), 'curl example'),
+      h('section', { class: 'panel' }, h('h2', null, 'Call it over HTTP'), h('p', { class: 'muted small' }, 'Set API_KEY to your key from Account.'), codeBlock(curlFor(s), 'curl example'),
         h('h2', { style: 'margin-top:12px' }, 'Reviews (' + fmtNum(st.reviews || reviews.length) + ')'), reviewsList),
       tryPanel(ctx, s, reloadReviews)));
+    if (S.me && !isOwner(s)) main.appendChild(reportControl(ctx, s));
   }
 
   function ownerBar(ctx, s) {
     const err = h('div');
     const paused = s.status === 'paused';
-    const toggle = h('button', { type: 'button', class: 'btn' }, paused ? 'Resume' : 'Pause');
+    const toggle = h('button', { type: 'button', class: 'btn', disabled: s.status === 'suspended' }, paused ? 'Resume' : 'Pause');
+    const priceIn = h('input', { type: 'number', id: 'o-price', min: 0, max: 1000, step: '0.01', inputmode: 'decimal', style: 'width:110px',
+      value: ((num(s.price_cents) || 0) / 100).toFixed(2) });
+    const priceBtn = h('button', { type: 'button', class: 'btn btn-sm' }, 'Save price');
+    priceBtn.addEventListener('click', async () => {
+      err.replaceChildren();
+      const c = dollarsToCents(priceIn.value);
+      if (c == null || c > 100000) { err.appendChild(errorBox({ message: 'Price must be between $0 and $1000.' })); return; }
+      priceBtn.disabled = true;
+      try {
+        await api('PATCH', '/v1/services/' + enc(s.slug), { price_cents: c }, { signal: ctx.signal });
+        route();
+      } catch (e) { if (!isAbort(e)) { err.appendChild(errorBox(e)); priceBtn.disabled = false; } }
+    });
     toggle.addEventListener('click', async () => {
       toggle.disabled = true; err.replaceChildren();
       try {
@@ -560,107 +677,239 @@
         s.mode === 'queue' ? h('a', { class: 'btn btn-primary', href: '#/work/' + enc(s.slug) }, 'Open worker console') : null,
         h('span', { class: 'spacer' }), toggle, del),
       s.mode === 'queue' ? h('p', { class: 'muted small', style: 'margin:6px 0 0' }, 'The service is "available now" only while a worker console is online.') : null,
-      err);
+      h('div', { class: 'row', style: 'margin-top:8px' }, h('label', { class: 'inline', for: 'o-price' }, 'Price (USD)'), priceIn, priceBtn,
+        h('span', { class: 'muted small' }, '0 = free' + (num(S.meta && S.meta.fee_percent) != null ? '; platform fee ' + S.meta.fee_percent + '%' : ''))),
+      err,
+      s.mode === 'queue' ? workersPanel(ctx, s) : null);
+  }
+
+  function workersPanel(ctx, s) {
+    const base = '/v1/services/' + enc(s.slug) + '/workers';
+    const list = h('ul', { class: 'plain' });
+    const err = h('div');
+    const inp = h('input', { type: 'text', id: 'w-add', placeholder: 'handle', autocomplete: 'off', spellcheck: 'false', style: 'max-width:220px' });
+    async function load() {
+      try {
+        const r = await api('GET', base, undefined, { signal: ctx.signal });
+        const ws = r.data && Array.isArray(r.data.workers) ? r.data.workers.filter(isObj) : [];
+        fill(list, ws.length ? ws.map((w) => {
+          const rm = h('button', { type: 'button', class: 'btn btn-sm' }, 'Remove');
+          rm.addEventListener('click', async () => {
+            if (!window.confirm('Remove @' + w.handle + ' from this inbox?')) return;
+            rm.disabled = true;
+            try { await api('DELETE', base + '/' + enc(w.handle), undefined, { signal: ctx.signal }); load(); }
+            catch (e) { if (!isAbort(e)) { fill(err, errorBox(e)); rm.disabled = false; } }
+          });
+          const st = w.online ? 'available' : 'offline';
+          return h('li', { class: 'row' },
+            h('span', { class: 'status status-' + st }, h('span', { class: 'dot', 'aria-hidden': 'true' }), w.online ? 'Online' : 'Offline'),
+            h('b', null, '@' + w.handle),
+            h('span', { class: 'muted small' }, w.last_seen_at ? 'seen ' + fmtAgo(w.last_seen_at) : 'not seen yet'),
+            h('span', { class: 'spacer' }), rm);
+        }) : h('li', { class: 'muted' }, 'No added workers. Only you can answer tasks.'));
+      } catch (e) { if (!isAbort(e)) fill(err, errorBox(e, 'Could not load workers')); }
+    }
+    const form = h('form', { class: 'row', style: 'margin-top:6px', novalidate: true }, h('label', { class: 'inline', for: 'w-add' }, 'Add worker'), inp,
+      h('button', { type: 'submit', class: 'btn btn-sm' }, 'Add'));
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      err.replaceChildren();
+      const v = inp.value.trim().replace(/^@/, '').toLowerCase();
+      if (!/^[a-z0-9_-]{3,32}$/.test(v)) { err.appendChild(errorBox({ message: 'Enter a valid handle.' })); return; }
+      try { await api('POST', base, { handle: v }, { signal: ctx.signal }); inp.value = ''; load(); }
+      catch (ex) { if (!isAbort(ex)) err.appendChild(errorBox(ex)); }
+    });
+    load();
+    return h('div', { style: 'margin-top:12px' }, h('h3', null, 'Workers'),
+      h('p', { class: 'muted small' }, 'People you add can open the worker console for this listing and answer tasks. Payment for answered tasks goes to you, the owner.'),
+      list, form, err);
+  }
+
+  function reportControl(ctx, s) {
+    const wrap = h('div', { class: 'report' });
+    const open = h('button', { type: 'button', class: 'linkbtn' }, 'Report this listing');
+    const sel = h('select', { id: 'rp-reason' }, ['spam', 'harmful', 'fraud', 'broken', 'other'].map((r) => h('option', { value: r }, r)));
+    const detail = h('textarea', { id: 'rp-detail', rows: 2, maxlength: 2000, class: 'prose' });
+    const err = h('div');
+    const cancel = h('button', { type: 'button', class: 'btn btn-sm' }, 'Cancel');
+    const form = h('form', { class: 'panel', style: 'max-width:460px' },
+      h('div', { class: 'field' }, h('label', { for: 'rp-reason' }, 'Reason'), sel),
+      h('div', { class: 'field' }, h('label', { for: 'rp-detail' }, 'Details (optional)'), detail),
+      h('div', { class: 'row' }, h('button', { type: 'submit', class: 'btn btn-sm btn-danger' }, 'Send report'), cancel), err);
+    open.addEventListener('click', () => { open.hidden = true; wrap.appendChild(form); sel.focus(); });
+    cancel.addEventListener('click', () => { form.remove(); open.hidden = false; open.focus(); });
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      err.replaceChildren();
+      const body = { reason: sel.value };
+      if (detail.value.trim()) body.detail = detail.value.trim();
+      try {
+        await api('POST', '/v1/services/' + enc(s.slug) + '/report', body, { signal: ctx.signal });
+        fill(wrap, h('p', { class: 'muted small' }, 'Reported. Moderators will review it.'));
+      } catch (ex) {
+        if (isAbort(ex)) return;
+        if (ex.code === 'already_reported') fill(wrap, h('p', { class: 'muted small' }, 'You have already reported this listing.'));
+        else err.appendChild(errorBox(ex));
+      }
+    });
+    wrap.appendChild(open);
+    return wrap;
+  }
+
+  const FINISHED = ['done', 'failed', 'timeout'];
+
+  // Long-polls GET /v1/calls/:id until the call leaves pending/claimed. Returns the final call.
+  async function waitForCall(call, sig, onUpdate, onRetry) {
+    let backoff = 1000;
+    while (call.status === 'pending' || call.status === 'claimed') {
+      try {
+        const g = await api('GET', '/v1/calls/' + enc(call.call_id) + '?wait_ms=25000', undefined, { signal: sig });
+        if (isObj(g.data) && g.data.status) call = Object.assign({}, call, g.data);
+        backoff = 1000;
+        if (onUpdate) onUpdate(call);
+      } catch (e) {
+        if (isAbort(e) || (e.status && e.status < 500)) throw e;
+        if (onRetry) onRetry(e, backoff);
+        await sleep(backoff, sig);
+        backoff = Math.min(backoff * 2, 30000);
+      }
+    }
+    return call;
+  }
+
+  function pendingText(st) {
+    return st === 'claimed' ? 'claimed — ' + T('worker') + (SF() ? ' is working on it' : ' is answering') : 'pending — waiting for ' + T('worker');
+  }
+
+  // Output (rendered by media type) or error, plus the review form when eligible.
+  function callResult(ctx, c, schema, onReviewed, canReview) {
+    const box = h('div');
+    if (c.status === 'done') {
+      add(box, h('h3', null, 'Output'), h('div', { class: 'inputview' }, renderValue('output', c.output, 0, schema)),
+        h('details', null, h('summary', { class: 'small' }, 'Raw JSON'), codeBlock(pretty(c.output), 'Output')));
+    } else if (FINISHED.includes(c.status)) {
+      const er = c.error;
+      const msg = isObj(er) ? (er.message || er.code || pretty(er)) : er ? String(er) : c.status === 'timeout' ? 'No answer before the time allowed ran out.' : 'The call did not complete.';
+      box.appendChild(errorBox({ message: msg, details: isObj(er) ? er.details : undefined }, c.status === 'timeout' ? 'Timed out' : 'Failed'));
+      if (num(c.price_cents) > 0) box.appendChild(h('p', { class: 'muted small' }, fmtUsd(c.price_cents) + ' was refunded to your balance automatically.'));
+    }
+    if (canReview !== false && c.call_id && !c.reviewed && FINISHED.includes(c.status)) box.appendChild(reviewForm(ctx, c.call_id, onReviewed));
+    return box;
+  }
+
+  function callLink(id, s) {
+    const href = '#/call/' + enc(id);
+    return h('div', { class: 'alert alert-ok' }, 'Call ', h('code', null, String(id)), ' is queued',
+      s && s.mode === 'queue' ? ' (time allowed: ' + fmtMs(s.timeout_ms) + ')' : '', '. Permanent link: ',
+      h('a', { href }, location.origin + location.pathname + location.search + href),
+      h('div', { class: 'small muted' }, 'Bookmark it; you can close this page and check back later. It is also listed under Account → My recent calls.'));
   }
 
   function tryPanel(ctx, s, onReviewed) {
-    const hasEx = s.example_input !== undefined && s.example_input !== null;
+    const sf = !!SF();
+    const price = num(s.price_cents) || 0;
+    const blocked = s.status === 'suspended';
+    // Input editor: generated form (default on storefront) or raw JSON (default on the marketplace).
+    const gen = buildAnswerForm(s.input_schema, ctx.signal, 'input (JSON)');
     const ta = h('textarea', { id: 'try-input', rows: 8, spellcheck: 'false' });
-    ta.value = pretty(hasEx ? s.example_input : {});
+    const ex = s.example_input !== undefined && s.example_input !== null ? s.example_input : skeleton(s.input_schema);
+    ta.value = pretty(ex == null ? {} : ex);
     const hint = h('div', { class: 'hint', 'aria-live': 'polite' });
-    const qOff = s.mode === 'queue' ? h('input', { type: 'checkbox', id: 'try-qoff' }) : null;
-    const btn = h('button', { type: 'submit', class: 'btn btn-primary' }, 'Call');
-    const stopBtn = h('button', { type: 'button', class: 'btn', hidden: true }, 'Stop waiting');
-    const out = h('div');
-    let pollCtrl = null;
     const validate = () => {
       try { JSON.parse(ta.value); hint.className = 'hint good'; hint.textContent = 'Valid JSON'; ta.removeAttribute('aria-invalid'); return true; }
       catch (e) { hint.className = 'hint bad'; hint.textContent = 'Invalid JSON: ' + e.message; ta.setAttribute('aria-invalid', 'true'); return false; }
     };
     ta.addEventListener('input', validate);
+    const formBox = h('div', null, gen.el);
+    const jsonBox = h('div', { class: 'field' }, h('label', { for: 'try-input' }, 'input (JSON)'), ta, hint);
+    let useJson = !sf || !gen.flat;
+    const toggleBtn = h('button', { type: 'button', class: 'linkbtn', hidden: !gen.flat });
+    const syncEditor = () => { formBox.hidden = useJson; jsonBox.hidden = !useJson; toggleBtn.textContent = useJson ? 'Use the form' : 'Edit as JSON'; };
+    toggleBtn.addEventListener('click', () => {
+      if (!useJson) { const r = gen.read(); if (r.ok) ta.value = pretty(r.value); validate(); }
+      useJson = !useJson; syncEditor();
+    });
+    syncEditor();
+    const getInput = () => (useJson
+      ? (validate() ? { ok: true, value: JSON.parse(ta.value) } : { ok: false, errors: ['input is not valid JSON'] })
+      : gen.read());
+
+    const qOff = s.mode === 'queue' ? h('input', { type: 'checkbox', id: 'try-qoff', checked: sf }) : null;
+    const cbIn = s.mode === 'queue' ? h('input', { type: 'url', id: 'try-cb', placeholder: 'https://your.host/hook', autocomplete: 'off' }) : null;
+    const confirmCb = price > 0 ? h('input', { type: 'checkbox', id: 'try-confirm' }) : null;
+    const btn = h('button', { type: 'submit', class: 'btn btn-primary', disabled: blocked }, T('call'));
+    const stopBtn = h('button', { type: 'button', class: 'btn', hidden: true }, 'Stop waiting');
+    const out = h('div');
+    let pollCtrl = null;
     stopBtn.addEventListener('click', () => { if (pollCtrl) pollCtrl.abort(); });
 
-    const form = h('form', { class: 'panel', 'aria-labelledby': 'try-h' },
-      h('h2', { id: 'try-h' }, 'Try it'),
-      getKey() ? null : h('div', { class: 'alert alert-warn' }, 'Calls require an API key. ', h('a', { href: '#/account' }, 'Create one or sign in'), '.'),
-      h('div', { class: 'field' }, h('label', { for: 'try-input' }, 'input (JSON)'), ta, hint),
-      qOff ? h('div', { class: 'field' }, h('label', { class: 'inline', for: 'try-qoff' }, qOff, 'Queue the task even if no worker is online')) : null,
+    const form = h('form', { class: 'panel', 'aria-labelledby': 'try-h', novalidate: true },
+      h('div', { class: 'row' }, h('h2', { id: 'try-h', style: 'margin:0' }, T('tryIt')), h('span', { class: 'spacer' }),
+        h('span', { class: 'price' }, price > 0 ? fmtUsd(price) + (sf ? ' per commission' : ' per call') : 'Free')),
+      getKey() ? null : h('div', { class: 'alert alert-warn' }, (sf ? 'Commissioning' : 'Calling') + ' requires an account. ', h('a', { href: '#/account' }, 'Create one or sign in'), '.'),
+      h('div', { style: 'margin-top:8px' }, formBox, jsonBox, h('p', { class: 'small' }, toggleBtn)),
+      qOff ? h('div', { class: 'field' }, h('label', { class: 'inline', for: 'try-qoff' }, qOff,
+        sf ? 'Send even if the artist is not online right now (they will see it in their inbox)' : 'Queue the task even if no worker is online')) : null,
+      cbIn ? h('details', { class: 'field' }, h('summary', { class: 'small' }, 'Notify a URL when finished (callback_url)'),
+        h('label', { for: 'try-cb', class: 'sr-only' }, 'callback_url'), cbIn,
+        h('div', { class: 'hint' }, 'Receives a POST of the call object when it finishes. https only.')) : null,
+      confirmCb ? h('div', { class: 'field' }, h('label', { class: 'inline', for: 'try-confirm' }, confirmCb,
+        'Spend ' + fmtUsd(price) + ' from my balance' + (S.me && num(S.me.balance_cents) != null ? ' (balance ' + fmtUsd(S.me.balance_cents) + ')' : '')),
+        h('div', { class: 'hint' }, 'Refunded automatically if the call fails or times out.')) : null,
       h('div', { class: 'row' }, btn, stopBtn),
       out);
 
     form.addEventListener('submit', (e) => { e.preventDefault(); run().catch(() => {}); });
 
     async function run() {
-      if (!validate()) return;
-      const input = JSON.parse(ta.value);
+      const inp = getInput();
+      if (!inp.ok) { fill(out, errorBox({ message: 'Incomplete input.', details: inp.errors })); return; }
+      if (confirmCb && !confirmCb.checked) { fill(out, errorBox({ message: 'Tick "Spend ' + fmtUsd(price) + ' from my balance" to confirm.' })); confirmCb.focus(); return; }
+      const cb = cbIn ? cbIn.value.trim() : '';
+      if (cb && !safeUrl(cb)) { fill(out, errorBox({ message: 'callback_url must be an https URL.' })); return; }
       if (pollCtrl) pollCtrl.abort();
       pollCtrl = linked(ctx.signal);
       const sig = pollCtrl.signal;
-      const line = h('p', { class: 'callstatus mono', 'aria-live': 'polite' }, 'Calling…');
+      const line = h('p', { class: 'callstatus mono', 'aria-live': 'polite' }, sf ? 'Sending…' : 'Calling…');
       fill(out, line);
       btn.disabled = true;
       const t0 = Date.now();
       let call = null, tick = null;
       try {
-        const body = { input, wait_ms: 20000 };
+        // Short first wait for queue work so the permanent link shows quickly; webhooks answer within it anyway.
+        const body = { input: inp.value, wait_ms: s.mode === 'queue' ? 3000 : 20000 };
+        if (price > 0) body.max_price_cents = price;
         if (qOff && qOff.checked) body.queue_if_offline = true;
+        if (cb) body.callback_url = cb;
         const r = await api('POST', '/v1/services/' + enc(s.slug) + '/call', body, { signal: sig, ok: [502] });
         call = isObj(r.data) ? r.data : {};
+        if (price > 0) loadMe(true);
         if (call.status === 'pending' || call.status === 'claimed') {
+          if (call.call_id) out.appendChild(callLink(call.call_id, s));
           stopBtn.hidden = false;
-          const show = () => {
-            line.textContent = (call.status === 'claimed' ? 'claimed — a worker is answering' : 'pending — waiting for a worker') +
-              ' · ' + fmtMs(Date.now() - t0) + ' elapsed · call ' + call.call_id;
-          };
+          const show = () => { line.textContent = pendingText(call.status) + ' · ' + fmtMs(Date.now() - t0) + ' elapsed'; };
           show();
           tick = setInterval(show, 1000);
-          let backoff = 1000;
-          while (call.status === 'pending' || call.status === 'claimed') {
-            try {
-              const g = await api('GET', '/v1/calls/' + enc(call.call_id) + '?wait_ms=25000', undefined, { signal: sig });
-              if (isObj(g.data) && g.data.status) call = Object.assign({}, call, g.data);
-              backoff = 1000;
-              show();
-            } catch (e) {
-              if (isAbort(e) || (e.status && e.status < 500)) throw e;
-              line.textContent = 'connection problem, retrying in ' + fmtMs(backoff) + ' · call ' + call.call_id;
-              await sleep(backoff, sig);
-              backoff = Math.min(backoff * 2, 30000);
-            }
-          }
+          call = await waitForCall(call, sig, (c) => { call = c; show(); },
+            (e, b) => { line.textContent = 'connection problem, retrying in ' + fmtMs(b); });
         }
-        showResult(call, Date.now() - t0);
+        const lat = num(call.latency_ms) != null ? call.latency_ms : Date.now() - t0;
+        line.textContent = (call.status || 'unknown') + ' · ' + fmtMs(lat) + (call.call_id ? ' · call ' + call.call_id : '');
+        out.appendChild(callResult(ctx, call, s.output_schema, onReviewed));
+        if (price > 0 && call.status !== 'done') loadMe(true);
       } catch (e) {
         if (isAbort(e)) {
-          if (!ctx.signal.aborted) {
-            line.textContent = call && call.call_id
-              ? 'Stopped waiting. The call continues; check it with GET /v1/calls/' + call.call_id
-              : 'Stopped.';
-          }
+          if (!ctx.signal.aborted) line.textContent = call && call.call_id ? 'Stopped waiting. The call continues; use the link above to check it later.' : 'Stopped.';
           return;
         }
         line.textContent = '';
-        out.appendChild(errorBox(e, e.code === 'service_unavailable' ? 'Unavailable' : 'Call failed'));
-        if (e.code === 'service_unavailable' && qOff) out.appendChild(h('p', { class: 'muted small' }, 'No worker is online. Tick "Queue the task even if no worker is online" to leave it in the inbox.'));
+        out.appendChild(errorBox(e, e.code === 'service_unavailable' ? 'Unavailable' : e.status === 402 ? 'Payment' : 'Call failed'));
+        if (e.code === 'insufficient_funds') out.appendChild(h('p', null, h('a', { class: 'btn btn-primary', href: '#/billing' }, 'Add funds')));
+        if (e.code === 'price_not_accepted') out.appendChild(h('p', { class: 'muted small' }, 'The price may have changed. ', h('button', { type: 'button', class: 'linkbtn', onclick: () => route() }, 'Reload'), ' to see the current price.'));
+        if (e.code === 'service_unavailable' && qOff) out.appendChild(h('p', { class: 'muted small' }, 'Nobody is online. Tick the box above to leave it in the inbox.'));
       } finally {
         if (tick) clearInterval(tick);
-        btn.disabled = false; stopBtn.hidden = true;
-      }
-
-      function showResult(c, elapsed) {
-        const lat = num(c.latency_ms) != null ? c.latency_ms : elapsed;
-        line.textContent = (c.status || 'unknown') + ' · ' + fmtMs(lat) + (c.call_id ? ' · call ' + c.call_id : '');
-        if (c.status === 'done') {
-          add(out, h('h3', null, 'Output'), h('div', { class: 'inputview' }, renderValue('output', c.output, 0, s.output_schema)),
-            h('details', null, h('summary', { class: 'small' }, 'Raw JSON'), codeBlock(pretty(c.output), 'Output')));
-        } else {
-          const er = c.error;
-          const msg = isObj(er) ? (er.message || er.code || pretty(er)) : er ? String(er) : c.status === 'timeout' ? 'No answer before the timeout.' : 'The call did not complete.';
-          out.appendChild(errorBox({ message: msg, details: isObj(er) ? er.details : undefined }, c.status === 'timeout' ? 'Timed out' : 'Failed'));
-        }
-        if (c.call_id && !c.reviewed && ['done', 'failed', 'timeout'].includes(c.status)) {
-          out.appendChild(reviewForm(ctx, c.call_id, onReviewed));
-        }
+        btn.disabled = blocked; stopBtn.hidden = true;
       }
     }
     return form;
@@ -743,6 +992,7 @@
       }, required: ['image_url'], additionalProperties: false },
       example_input: { brief: 'A lighthouse at dusk for a book cover, portrait orientation', style: 'gouache' },
       timeout_ms: 7 * 86400000,
+      creative: true,
     },
     music: {
       label: 'Human-written music (queue, 7 d)',
@@ -761,6 +1011,25 @@
       }, required: ['audio_url'], additionalProperties: false },
       example_input: { brief: 'Intro sting for a technical podcast', duration_seconds: 15, mood: 'calm, curious' },
       timeout_ms: 7 * 86400000,
+      creative: true,
+    },
+    video: {
+      label: 'Human-made video (queue, 7 d)',
+      name: 'Short custom video',
+      description: 'A person shoots or animates a short original video from your brief and returns a link to the file. Allow up to 7 days.',
+      tags: 'video, animation, human',
+      mode: 'queue',
+      input_schema: { type: 'object', properties: {
+        brief: { type: 'string', minLength: 1, maxLength: 4000, description: 'What the video should show and where it will be used' },
+        duration_seconds: { type: 'integer', minimum: 5, maximum: 300 },
+      }, required: ['brief'], additionalProperties: false },
+      output_schema: { type: 'object', properties: {
+        video_url: { type: 'string', format: 'uri', contentMediaType: 'video/*', description: 'The finished video' },
+        note: { type: 'string', maxLength: 2000 },
+      }, required: ['video_url'], additionalProperties: false },
+      example_input: { brief: 'A 10-second looping animation of rain on a window for a website header', duration_seconds: 10 },
+      timeout_ms: 7 * 86400000,
+      creative: true,
     },
   };
 
@@ -799,10 +1068,13 @@
   }
 
   async function viewPublish(ctx) {
-    setTitle('Publish');
+    const sf = SF();
+    setTitle(T('publish'));
     await loadMe();
     if (ctx.signal.aborted) return;
+    const fee = num(S.meta && S.meta.fee_percent);
     const f = {
+      price: h('input', { type: 'number', id: 'p-price', min: 0, max: 1000, step: '0.01', inputmode: 'decimal', value: '0.00', 'aria-describedby': 'p-price-hint' }),
       name: h('input', { type: 'text', id: 'p-name', required: true, maxlength: 80, autocomplete: 'off' }),
       description: h('textarea', { id: 'p-desc', rows: 3, class: 'prose', maxlength: 2000 }),
       tags: h('input', { type: 'text', id: 'p-tags', placeholder: 'image, rating', autocomplete: 'off' }),
@@ -815,7 +1087,7 @@
     const outS = jsonField('p-out', 'output_schema', 9, { required: true, schema: true });
     const ex = jsonField('p-ex', 'example_input', 4);
     const modeRadio = (val, title, text) => h('label', { class: 'radio-opt' },
-      h('input', { type: 'radio', name: 'p-mode', value: val, checked: val === 'webhook' }),
+      h('input', { type: 'radio', name: 'p-mode', value: val, checked: val === (sf ? 'queue' : 'webhook') }),
       h('span', null, h('b', null, title), h('span', { class: 'muted' }, text)));
     const webhookBox = h('fieldset', null, h('legend', null, 'Webhook'),
       h('div', { class: 'field' }, h('label', { for: 'p-endpoint' }, 'endpoint_url (required)'), f.endpoint,
@@ -829,7 +1101,7 @@
       h('div', { class: 'hint' }, 'How long a queued task may wait for an answer before it times out. Long values suit slow work such as commissions.'));
     const err = h('div');
     const submit = h('button', { type: 'submit', class: 'btn btn-primary btn-big' }, 'Publish service');
-    const mode = () => { const r = form.querySelector('input[name="p-mode"]:checked'); return r ? r.value : 'webhook'; };
+    const mode = () => { const r = form.querySelector('input[name="p-mode"]:checked'); return r ? r.value : (sf ? 'queue' : 'webhook'); };
     const syncMode = () => {
       const wh = mode() === 'webhook';
       webhookBox.hidden = !wh; f.endpoint.required = wh;
@@ -848,11 +1120,14 @@
 
     const form = h('form', { class: 'panel', novalidate: true },
       h('div', { class: 'row', style: 'margin-bottom:12px' }, h('span', { class: 'muted' }, 'Start from a template:'),
-        Object.values(TEMPLATES).map((t) => h('button', { type: 'button', class: 'btn btn-sm', onclick: () => applyTemplate(t) }, t.label))),
+        Object.values(TEMPLATES).filter((t) => !sf || t.creative).map((t) => h('button', { type: 'button', class: 'btn btn-sm', onclick: () => applyTemplate(t) }, t.label))),
       h('div', { class: 'field' }, h('label', { for: 'p-name' }, 'Name'), f.name),
       h('div', { class: 'field' }, h('label', { for: 'p-desc' }, 'Description'), f.description,
         h('div', { class: 'hint' }, 'What it does, what quality to expect, any limits. Agents read this to decide.')),
       h('div', { class: 'field' }, h('label', { for: 'p-tags' }, 'Tags (comma-separated)'), f.tags),
+      h('div', { class: 'field' }, h('label', { for: 'p-price' }, sf ? 'Price per commission (USD)' : 'Price per call (USD)'), f.price,
+        h('div', { class: 'hint', id: 'p-price-hint' }, '0 = free. Callers pay from their balance; failed or timed-out calls are refunded. ' +
+          'The platform fee is ' + (fee != null ? fee + '%' : 'a percentage') + ' of each paid call; the rest is credited to you as earnings.')),
       h('fieldset', null, h('legend', null, 'Mode'),
         modeRadio('webhook', 'API (webhook)', 'Your server answers each call automatically over HTTPS.'),
         modeRadio('queue', 'Human (queue)', 'Calls wait in a browser inbox; you answer them in the worker console.')),
@@ -867,7 +1142,8 @@
     form.addEventListener('change', (e) => { if (e.target && e.target.name === 'p-mode') syncMode(); });
     syncMode(); inS.check(); outS.check(); ex.check();
 
-    add(main, h('h1', null, 'Publish a service'),
+    add(main, h('h1', null, sf ? 'Offer your work' : 'Publish a service'),
+      sf ? h('p', { class: 'muted' }, 'Create a listing people and agents can commission. You answer each commission in the worker console, usually by uploading the finished file.') : null,
       S.me ? h('p', { class: 'muted' }, 'Publishing as @' + S.me.handle + '.')
         : h('div', { class: 'alert alert-warn' }, 'You need an account to publish. ', h('a', { href: '#/account' }, 'Create one or paste your API key'), '.'),
       form);
@@ -886,11 +1162,13 @@
       }
       const a = inS.check(), b = outS.check(), c = ex.check();
       [a, b, c].forEach((x) => { if (!x.ok) problems.push(x.error || 'schema required'); });
+      const priceCents = dollarsToCents(f.price.value);
+      if (priceCents == null || priceCents > 100000) problems.push('price must be between $0 and $1000');
       if (problems.length) { err.appendChild(errorBox({ message: 'Fix these fields.', details: problems })); return; }
       const body = {
         name, description: f.description.value.trim(),
         tags: f.tags.value.split(',').map((t) => t.trim()).filter(Boolean),
-        mode: m, input_schema: a.value, output_schema: b.value,
+        mode: m, input_schema: a.value, output_schema: b.value, price_cents: priceCents,
       };
       if (c.value !== undefined) body.example_input = c.value;
       if (m === 'webhook') { body.endpoint_url = endpoint; if (health) body.health_url = health; }
@@ -1200,12 +1478,13 @@
   }
 
   // Returns {el, read() -> {ok, value} | {ok:false, errors}, focus(), keys, choice}
-  function buildAnswerForm(schema, signal) {
+  function buildAnswerForm(schema, signal, jsonLabel) {
     if (isFlat(schema)) {
       const req = Array.isArray(schema.required) ? schema.required : [];
       const fields = Object.keys(schema.properties).map((k) => buildField(k, schema.properties[k], req.includes(k), signal));
       const withKeys = fields.find((f) => f.keys && Object.keys(f.keys).length);
       return {
+        flat: true,
         el: h('div', null, fields.map((f) => f.el)),
         keyField: withKeys || null,
         focus: () => { const f = fields.find((x) => x.focus); if (f) f.focus(); },
@@ -1224,8 +1503,9 @@
     const ta = h('textarea', { id, rows: 10, spellcheck: 'false' });
     ta.value = pretty(skeleton(schema));
     return {
-      el: h('div', { class: 'field' }, h('label', { for: id }, 'Output (JSON matching the output schema)'), ta,
-        h('details', null, h('summary', { class: 'small' }, 'Output schema'), h('pre', { class: 'small' }, pretty(schema)))),
+      flat: false,
+      el: h('div', { class: 'field' }, h('label', { for: id }, jsonLabel || 'Output (JSON matching the output schema)'), ta,
+        h('details', null, h('summary', { class: 'small' }, 'Schema'), h('pre', { class: 'small' }, pretty(schema)))),
       keyField: null,
       focus: () => ta.focus(),
       read() {
@@ -1248,10 +1528,6 @@
       return;
     }
     if (!getKey()) { add(main, errorBox({ status: 401, message: 'Sign in to work this inbox.' })); return; }
-    if (S.me && !isOwner(s)) {
-      add(main, errorBox({ message: 'Only the owner (@' + s.owner + ') can work this inbox. You are signed in as @' + S.me.handle + '.' }));
-      return;
-    }
 
     const stateLine = h('div', { class: 'state', 'aria-live': 'polite' });
     const toggle = h('button', { type: 'button', class: 'btn btn-primary btn-big' }, 'Go online');
@@ -1260,6 +1536,8 @@
     const taskSlot = h('div');
     add(main,
       s.status === 'paused' ? h('div', { class: 'alert alert-warn' }, 'This service is paused; agents cannot call it. Resume it on the ', h('a', { href: '#/s/' + enc(slug) }, 'detail page'), '.') : null,
+      s.status === 'suspended' ? h('div', { class: 'alert alert-error' }, h('b', null, 'Suspended by moderators. '), 'No new tasks will arrive.') : null,
+      S.me && !isOwner(s) ? h('p', { class: 'muted small' }, 'Working as @' + S.me.handle + ' for @' + s.owner + '.') : null,
       presence,
       h('p', { class: 'muted small' }, 'While online this page long-polls for tasks; the polling is the presence signal. Keep the tab open. Keys: digits pick a value, ', h('kbd', null, 'Enter'), ' submits (', h('kbd', null, 'Ctrl'), '+', h('kbd', null, 'Enter'), ' inside a text box).'),
       taskSlot);
@@ -1429,7 +1707,7 @@
    * ======================================================================= */
   async function viewAccount(ctx) {
     setTitle('Account');
-    await loadMe();
+    await loadMe(true);
     if (ctx.signal.aborted) return;
     add(main, h('h1', null, 'Account'));
     if (S.me) return renderSignedIn(ctx);
@@ -1526,23 +1804,333 @@
       clearKey(); updateNav(); route();
     });
     const svcs = Array.isArray(me.services) ? me.services.filter(isObj) : [];
+    const works = Array.isArray(me.works_for) ? me.works_for.filter(isObj) : [];
+    const miniList = (items) => h('ul', { class: 'svc-list', style: 'margin-top:8px' }, items.map((s) => h('li', { class: 'svc st-' + statusOf(s) },
+      h('div', null, statusTag(s)),
+      h('div', null,
+        h('div', { class: 'svc-head' }, h('a', { class: 'svc-name', href: '#/s/' + enc(s.slug) }, s.name || s.slug), modeBadge(s.mode),
+          h('span', { class: 'price small' }, fmtPrice(num(s.price_cents) == null ? 0 : s.price_cents))),
+        ioLine(s)),
+      h('div', null, s.mode === 'queue' ? h('a', { class: 'btn btn-sm', href: '#/work/' + enc(s.slug) }, 'Worker console') : null))));
+    const callsBox = h('div', null, h('p', { class: 'muted' }, 'Loading…'));
     add(main,
       h('section', { class: 'panel' },
         h('dl', { class: 'kv' },
-          h('dt', null, 'Handle'), h('dd', null, h('b', null, '@' + me.handle)),
+          h('dt', null, 'Handle'), h('dd', null, h('b', null, '@' + me.handle), me.is_admin ? [' ', h('a', { class: 'badge', href: '#/admin' }, 'admin')] : null),
+          h('dt', null, 'Balance'), h('dd', null, h('b', { class: 'mono' }, fmtUsd(me.balance_cents)), ' ', h('a', { href: '#/billing' }, 'Billing')),
+          h('dt', null, 'Earned'), h('dd', { class: 'mono' }, fmtUsd(me.earned_cents)),
           h('dt', null, 'API key'), h('dd', null, keyEl, ' ', reveal, ' ', copyBtn(() => key))),
         h('div', { class: 'row', style: 'margin-top:10px' }, out)),
       h('section', { class: 'panel' },
-        h('div', { class: 'row' }, h('h2', { style: 'margin:0' }, 'My services'), h('span', { class: 'spacer' }), h('a', { class: 'btn btn-sm btn-primary', href: '#/publish' }, 'Publish')),
-        svcs.length
-          ? h('ul', { class: 'svc-list', style: 'margin-top:8px' }, svcs.map((s) => h('li', { class: 'svc st-' + statusOf(s) },
-            h('div', null, statusTag(s)),
-            h('div', null,
-              h('div', { class: 'svc-head' }, h('a', { class: 'svc-name', href: '#/s/' + enc(s.slug) }, s.name || s.slug), modeBadge(s.mode)),
-              ioLine(s)),
-            h('div', null, s.mode === 'queue' ? h('a', { class: 'btn btn-sm', href: '#/work/' + enc(s.slug) }, 'Worker console') : null))))
-          : h('p', { class: 'muted', style: 'margin-top:8px' }, 'You have not published any services yet.')));
-    void ctx;
+        h('div', { class: 'row' }, h('h2', { style: 'margin:0' }, 'My services'), h('span', { class: 'spacer' }), h('a', { class: 'btn btn-sm btn-primary', href: '#/publish' }, T('publish'))),
+        svcs.length ? miniList(svcs) : h('p', { class: 'muted', style: 'margin-top:8px' }, 'You have not published any services yet.')),
+      works.length ? h('section', { class: 'panel' }, h('h2', { style: 'margin:0' }, 'Inboxes I work'), miniList(works)) : null,
+      h('section', { class: 'panel' }, h('h2', null, 'My recent calls'), callsBox));
+    api('GET', '/v1/calls', undefined, { signal: ctx.signal }).then((r) => {
+      const cs = r.data && Array.isArray(r.data.calls) ? r.data.calls.filter(isObj) : [];
+      fill(callsBox, cs.length ? callsTable(cs) : h('p', { class: 'muted' }, 'No calls yet.'));
+    }, (e) => { if (!isAbort(e)) fill(callsBox, errorBox(e, 'Could not load calls')); });
+  }
+
+  function svcSlugOf(v) { return typeof v === 'string' ? v : isObj(v) && typeof v.slug === 'string' ? v.slug : null; }
+  function callsTable(cs) {
+    return h('div', { class: 'tbl-wrap' }, h('table', { class: 'tbl' },
+      h('thead', null, h('tr', null, h('th', null, 'Call'), h('th', null, 'Service'), h('th', null, 'Status'), h('th', { class: 'num' }, 'Price'), h('th', { class: 'num' }, 'Created'))),
+      h('tbody', null, cs.map((c) => {
+        const slug = svcSlugOf(c.service);
+        return h('tr', null,
+          h('td', null, h('a', { class: 'mono', href: '#/call/' + enc(c.call_id) }, String(c.call_id))),
+          h('td', null, slug ? h('a', { href: '#/s/' + enc(slug) }, slug) : '—'),
+          h('td', { class: 'mono' }, String(c.status || '?')),
+          h('td', { class: 'num' }, fmtPrice(c.price_cents)),
+          h('td', { class: 'num' }, fmtAgo(c.created_at)));
+      }))));
+  }
+
+  /* =========================================================================
+   * Call  #/call/:id
+   * ======================================================================= */
+  async function viewCall(ctx, id) {
+    setTitle('Call ' + id);
+    await loadMe();
+    if (ctx.signal.aborted) return;
+    add(main, h('nav', { class: 'crumb', 'aria-label': 'Breadcrumb' }, h('a', { href: '#/account' }, '← Account')));
+    if (!getKey()) { add(main, errorBox({ status: 401, message: 'Sign in to view this call.' })); return; }
+    const r = await api('GET', '/v1/calls/' + enc(id), undefined, { signal: ctx.signal });
+    let call = isObj(r.data) ? r.data : {};
+    const slug = svcSlugOf(call.service);
+    let svc = null;
+    if (slug) {
+      try {
+        const sr = await api('GET', '/v1/services/' + enc(slug), undefined, { signal: ctx.signal });
+        svc = sr.data && isObj(sr.data.service) ? sr.data.service : null;
+      } catch (e) { if (isAbort(e)) throw e; }
+    }
+    if (ctx.signal.aborted) return;
+    if (svc) setTitle('Call · ' + (svc.name || slug));
+    const statusEl = h('p', { class: 'callstatus mono', 'aria-live': 'polite' });
+    const facts = h('dl', { class: 'statgrid' });
+    const resultBox = h('div');
+    add(main, h('h1', null, 'Call ', h('code', null, String(call.call_id || id))),
+      h('p', null, slug ? h('a', { href: '#/s/' + enc(slug) }, svc ? svc.name || slug : slug) : null, svc ? [' · by @', svc.owner] : null),
+      statusEl, facts,
+      h('div', { class: 'grid2' },
+        h('section', { class: 'panel inputview' }, h('h2', null, 'Input'), renderValue('input', call.input, 0, svc && svc.input_schema)),
+        h('section', { class: 'panel' }, resultBox)));
+
+    const stat = (label, value) => h('div', { class: 'stat' }, h('dt', null, label), h('dd', null, value));
+    let tick = null;
+    function render() {
+      const pend = call.status === 'pending' || call.status === 'claimed';
+      statusEl.textContent = pend
+        ? pendingText(call.status) + ' · created ' + fmtAgo(call.created_at) + ' · this page updates automatically'
+        : String(call.status || 'unknown');
+      fill(facts,
+        stat('Status', String(call.status || '?')),
+        stat('Price', fmtPrice(call.price_cents)),
+        stat('Created', fmtAgo(call.created_at)),
+        stat('Latency', fmtMs(call.latency_ms)),
+        svc && svc.mode === 'queue' && num(call.created_at) != null && num(svc.timeout_ms) != null && pend
+          ? stat('Deadline', fmtClock(call.created_at + svc.timeout_ms - Date.now()) + ' left') : null);
+      fill(resultBox, pend ? h('p', { class: 'muted' }, 'No result yet.')
+        : callResult(ctx, call, svc && svc.output_schema, null, !(svc && isOwner(svc))));
+    }
+    render();
+    if (call.status === 'pending' || call.status === 'claimed') {
+      tick = setInterval(() => { if (call.status === 'pending' || call.status === 'claimed') render(); }, 30000);
+      ctx.onLeave(() => clearInterval(tick));
+      try {
+        call = await waitForCall(call, ctx.signal, (c) => { call = c; render(); },
+          (e, b) => { statusEl.textContent = 'connection problem, retrying in ' + fmtMs(b); });
+      } finally { clearInterval(tick); }
+      render();
+    }
+  }
+
+  /* =========================================================================
+   * Billing  #/billing
+   * ======================================================================= */
+  const LEDGER_KIND = { topup: 'Top-up', hold: 'Call charge', refund: 'Refund', earning: 'Earning', fee: 'Platform fee', payout: 'Payout', grant: 'Credit grant' };
+
+  async function viewBilling(ctx) {
+    setTitle('Billing');
+    await loadMe();
+    if (ctx.signal.aborted) return;
+    add(main, h('h1', null, 'Billing'));
+    if (!getKey()) { add(main, errorBox({ status: 401, message: 'Sign in to see your balance.' })); return; }
+    const paid = ctx.query.get('paid') === '1';
+    if (paid) add(main, okBox('Payment received. Your balance updates within a few seconds.'));
+    const summary = h('section', { class: 'panel' });
+    const topup = h('section', { class: 'panel' });
+    const payout = h('section', { class: 'panel' });
+    const ledger = h('section', { class: 'panel' });
+    add(main, summary, h('div', { class: 'grid2' }, topup, payout), ledger);
+    let data = {};
+
+    async function load() {
+      const r = await api('GET', '/v1/billing', undefined, { signal: ctx.signal });
+      data = isObj(r.data) ? r.data : {};
+      renderSummary(); renderLedger();
+    }
+    function renderSummary() {
+      fill(summary, h('dl', { class: 'kv' },
+        h('dt', null, 'Balance'), h('dd', null, h('span', { class: 'bigmoney mono' }, fmtUsd(data.balance_cents))),
+        h('dt', null, 'Earned (all time)'), h('dd', { class: 'mono' }, fmtUsd(S.me && S.me.earned_cents)),
+        h('dt', null, 'Platform fee'), h('dd', null, num(data.fee_percent) != null ? data.fee_percent + '% of each paid call' : '—')),
+        h('p', { class: 'muted small', style: 'margin:8px 0 0' }, 'Paid calls are held from your balance when made and refunded automatically if they fail or time out.'));
+    }
+    function renderLedger() {
+      const rows = Array.isArray(data.ledger) ? data.ledger.filter(isObj) : [];
+      fill(ledger, h('h2', null, 'Ledger'), rows.length ? h('div', { class: 'tbl-wrap' }, h('table', { class: 'tbl' },
+        h('thead', null, h('tr', null, h('th', null, 'When'), h('th', null, 'Kind'), h('th', { class: 'num' }, 'Amount'), h('th', null, 'Call'), h('th', null, 'Note'))),
+        h('tbody', null, rows.map((e) => h('tr', null,
+          h('td', { title: num(e.at) != null ? new Date(e.at).toISOString() : null }, fmtAgo(e.at)),
+          h('td', null, LEDGER_KIND[e.kind] || String(e.kind || '?')),
+          h('td', { class: 'num ' + (num(e.amount_cents) > 0 ? 'pos' : '') }, (num(e.amount_cents) > 0 ? '+' : '') + fmtUsd(e.amount_cents)),
+          h('td', null, e.call_id ? h('a', { class: 'mono', href: '#/call/' + enc(e.call_id) }, String(e.call_id)) : ''),
+          h('td', { class: 'small' }, e.note ? String(e.note) : '')))))) : h('p', { class: 'muted' }, 'No transactions yet.'));
+    }
+
+    function renderTopup() {
+      if (!data.payments_enabled) { fill(topup, h('h2', null, 'Add funds'), h('p', { class: 'muted' }, 'Card payments are not enabled yet.')); return; }
+      const err = h('div');
+      const custom = h('input', { type: 'number', id: 'b-amt', min: 5, max: 500, step: '1', inputmode: 'decimal', placeholder: '20', style: 'max-width:120px' });
+      async function checkout(cents, btn) {
+        err.replaceChildren();
+        if (!(cents >= 500 && cents <= 50000)) { err.appendChild(errorBox({ message: 'Amount must be between $5 and $500.' })); return; }
+        btn.disabled = true;
+        try {
+          const r = await api('POST', '/v1/billing/checkout', { amount_cents: cents }, { signal: ctx.signal });
+          const u = safeUrl(r.data && r.data.url);
+          if (!u) throw new Error('The server did not return a checkout URL.');
+          location.href = u.href;
+        } catch (e) {
+          if (isAbort(e)) return;
+          btn.disabled = false;
+          if (e.code === 'payments_disabled') { data.payments_enabled = false; renderTopup(); return; }
+          err.appendChild(errorBox(e));
+        }
+      }
+      const customBtn = h('button', { type: 'submit', class: 'btn' }, 'Pay');
+      const customForm = h('form', { class: 'row', style: 'margin-top:8px', novalidate: true }, h('label', { class: 'inline', for: 'b-amt' }, 'Other amount ($)'), custom, customBtn);
+      customForm.addEventListener('submit', (e) => { e.preventDefault(); checkout(dollarsToCents(custom.value), customBtn); });
+      fill(topup, h('h2', null, 'Add funds'),
+        h('div', { class: 'btnrow' }, [500, 1000, 2500, 5000].map((c) => {
+          const b = h('button', { type: 'button', class: 'btn' }, fmtUsd(c));
+          b.addEventListener('click', () => checkout(c, b));
+          return b;
+        })),
+        customForm,
+        h('p', { class: 'hint' }, 'You will be redirected to the card payment page and brought back here.'), err);
+    }
+
+    function renderPayout() {
+      const amt = h('input', { type: 'number', id: 'po-amt', min: 10, step: '0.01', inputmode: 'decimal', style: 'max-width:140px' });
+      const dest = h('input', { type: 'text', id: 'po-dest', maxlength: 200, autocomplete: 'off', placeholder: 'e.g. PayPal email' });
+      const err = h('div');
+      const btn = h('button', { type: 'submit', class: 'btn' }, 'Request payout');
+      const form = h('form', { novalidate: true }, h('h2', null, 'Request a payout'),
+        h('div', { class: 'field' }, h('label', { for: 'po-amt' }, 'Amount (USD, minimum $10.00)'), amt),
+        h('div', { class: 'field' }, h('label', { for: 'po-dest' }, 'Destination'), dest,
+          h('div', { class: 'hint' }, 'Where to send the money. Only earnings (not top-ups or credit grants) can be paid out; requests are reviewed and sent manually.')),
+        btn, err);
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        err.replaceChildren();
+        const c = dollarsToCents(amt.value);
+        if (c == null || c < 1000) { err.appendChild(errorBox({ message: 'Minimum payout is $10.00.' })); return; }
+        if (!dest.value.trim()) { err.appendChild(errorBox({ message: 'Enter a destination.' })); return; }
+        btn.disabled = true;
+        try {
+          const r = await api('POST', '/v1/billing/payouts', { amount_cents: c, destination: dest.value.trim() }, { signal: ctx.signal });
+          amt.value = ''; dest.value = '';
+          err.appendChild(okBox('Payout of ' + fmtUsd(c) + ' requested' + (r.data && r.data.id ? ' (' + r.data.id + ')' : '') + '.'));
+          load().catch(() => {}); loadMe(true);
+        } catch (ex) { if (!isAbort(ex)) err.appendChild(errorBox(ex)); }
+        finally { btn.disabled = false; }
+      });
+      fill(payout, form);
+    }
+
+    await load();
+    renderTopup(); renderPayout();
+    if (paid) {
+      loadMe(true);
+      [3000, 8000].forEach((ms) => {
+        const t = setTimeout(() => { load().catch(() => {}); loadMe(true); }, ms);
+        ctx.onLeave(() => clearTimeout(t));
+      });
+    }
+  }
+
+  /* =========================================================================
+   * Admin  #/admin
+   * ======================================================================= */
+  async function viewAdmin(ctx) {
+    setTitle('Admin');
+    await loadMe();
+    if (ctx.signal.aborted) return;
+    add(main, h('h1', null, 'Admin'));
+    if (!S.me || S.me.is_admin !== true) { add(main, errorBox({ status: S.me ? 403 : 401, message: 'Admins only.' })); return; }
+    const reportsP = h('section', { class: 'panel' });
+    const payoutsP = h('section', { class: 'panel' });
+    const creditP = h('section', { class: 'panel' });
+    add(main, h('div', { class: 'grid2' }, reportsP, payoutsP), creditP);
+
+    // Runs an admin action from a button, shows errors in `slot`, then reloads.
+    function act(btn, slot, fn, reload) {
+      btn.addEventListener('click', async () => {
+        slot.replaceChildren();
+        btn.disabled = true;
+        try { await fn(); await reload(); }
+        catch (e) {
+          if (ctx.signal.aborted) return;
+          if (!isAbort(e)) slot.appendChild(errorBox(e)); // AbortError here = a cancelled confirm()
+          btn.disabled = false;
+        }
+      });
+      return btn;
+    }
+    const post = (path, body) => api('POST', path, body, { signal: ctx.signal });
+
+    async function loadReports() {
+      const err = h('div');
+      try {
+        const r = await api('GET', '/v1/admin/reports', undefined, { signal: ctx.signal });
+        const all = r.data && Array.isArray(r.data.reports) ? r.data.reports.filter(isObj) : [];
+        const open = all.filter((x) => x.status === 'open');
+        const row = (x, actions) => h('li', null,
+          h('div', { class: 'row' },
+            h('a', { href: '#/s/' + enc(x.service) }, x.service_name || x.service),
+            h('span', { class: 'badge' }, String(x.service_status || '?')),
+            h('span', { class: 'badge' }, String(x.reason || '?')),
+            h('span', { class: 'muted small' }, 'by @' + x.reporter + ' · ' + fmtAgo(x.created_at))),
+          x.detail ? h('p', { class: 'desc small', style: 'margin:4px 0' }, String(x.detail)) : null,
+          actions ? h('div', { class: 'row' }, actions) : null);
+        fill(reportsP, h('h2', null, 'Open reports (' + open.length + ')'), err,
+          open.length ? h('ul', { class: 'plain' }, open.map((x) => row(x, [
+            act(h('button', { type: 'button', class: 'btn btn-sm' }, 'Dismiss'), err, () => post('/v1/admin/reports/' + enc(x.id) + '/resolve', { action: 'dismiss' }), loadReports),
+            x.service_status === 'suspended'
+              ? act(h('button', { type: 'button', class: 'btn btn-sm' }, 'Reactivate listing'), err, () => post('/v1/admin/services/' + enc(x.service) + '/status', { status: 'active' }), loadReports)
+              : act(h('button', { type: 'button', class: 'btn btn-sm btn-danger' }, 'Suspend listing'), err, () => post('/v1/admin/reports/' + enc(x.id) + '/resolve', { action: 'suspend' }), loadReports),
+          ]))) : h('p', { class: 'muted' }, 'No open reports.'),
+          all.length > open.length ? h('details', null, h('summary', { class: 'small' }, (all.length - open.length) + ' resolved'),
+            h('ul', { class: 'plain' }, all.filter((x) => x.status !== 'open').map((x) => row(x, x.service_status === 'suspended'
+              ? [act(h('button', { type: 'button', class: 'btn btn-sm' }, 'Reactivate listing'), err, () => post('/v1/admin/services/' + enc(x.service) + '/status', { status: 'active' }), loadReports)]
+              : null)))) : null);
+      } catch (e) { if (!isAbort(e)) fill(reportsP, h('h2', null, 'Reports'), errorBox(e)); }
+    }
+
+    async function loadPayouts() {
+      const err = h('div');
+      try {
+        const r = await api('GET', '/v1/admin/payouts', undefined, { signal: ctx.signal });
+        const all = r.data && Array.isArray(r.data.payouts) ? r.data.payouts.filter(isObj) : [];
+        const pend = all.filter((p) => p.status === 'requested');
+        const line = (p) => [h('b', { class: 'mono' }, fmtUsd(p.amount_cents)), ' to ', h('code', null, String(p.destination || '?')),
+          h('span', { class: 'muted small' }, ' @' + p.handle + ' · ' + fmtAgo(p.created_at))];
+        fill(payoutsP, h('h2', null, 'Payout requests (' + pend.length + ')'), err,
+          pend.length ? h('ul', { class: 'plain' }, pend.map((p) => h('li', null, h('div', null, line(p)), h('div', { class: 'row', style: 'margin-top:4px' },
+            act(h('button', { type: 'button', class: 'btn btn-sm' }, 'Mark paid'), err, async () => {
+              if (!window.confirm('Mark ' + fmtUsd(p.amount_cents) + ' to ' + p.destination + ' as paid? Send the money first.')) throw new DOMException('Aborted', 'AbortError');
+              return post('/v1/admin/payouts/' + enc(p.id), { status: 'paid' });
+            }, loadPayouts),
+            act(h('button', { type: 'button', class: 'btn btn-sm btn-danger' }, 'Reject'), err, () => post('/v1/admin/payouts/' + enc(p.id), { status: 'rejected' }), loadPayouts)))))
+            : h('p', { class: 'muted' }, 'No pending payout requests.'),
+          all.length > pend.length ? h('details', null, h('summary', { class: 'small' }, 'History'),
+            h('ul', { class: 'plain' }, all.filter((p) => p.status !== 'requested').map((p) => h('li', { class: 'small' }, line(p), ' · ', h('b', null, String(p.status)))))) : null);
+      } catch (e) { if (!isAbort(e)) fill(payoutsP, h('h2', null, 'Payouts'), errorBox(e)); }
+    }
+
+    const ch = h('input', { type: 'text', id: 'cr-handle', autocomplete: 'off', spellcheck: 'false' });
+    const ca = h('input', { type: 'number', id: 'cr-amt', min: 0.01, step: '0.01', inputmode: 'decimal' });
+    const cn = h('input', { type: 'text', id: 'cr-note', maxlength: 200, autocomplete: 'off' });
+    const cErr = h('div');
+    const cBtn = h('button', { type: 'submit', class: 'btn' }, 'Grant credit');
+    const cForm = h('form', { novalidate: true }, h('h2', null, 'Grant credit'),
+      h('div', { class: 'grid2' },
+        h('div', { class: 'field' }, h('label', { for: 'cr-handle' }, 'Handle'), ch),
+        h('div', { class: 'field' }, h('label', { for: 'cr-amt' }, 'Amount (USD)'), ca)),
+      h('div', { class: 'field' }, h('label', { for: 'cr-note' }, 'Note (optional)'), cn), cBtn, cErr);
+    cForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      cErr.replaceChildren();
+      const handle = ch.value.trim().replace(/^@/, '').toLowerCase();
+      const c = dollarsToCents(ca.value);
+      if (!handle || !c) { cErr.appendChild(errorBox({ message: 'Enter a handle and a positive amount.' })); return; }
+      cBtn.disabled = true;
+      try {
+        const body = { handle, amount_cents: c };
+        if (cn.value.trim()) body.note = cn.value.trim();
+        await post('/v1/admin/credit', body);
+        cErr.appendChild(okBox('Granted ' + fmtUsd(c) + ' to @' + handle + '.'));
+        ca.value = ''; cn.value = '';
+        if (handle === S.me.handle) loadMe(true);
+      } catch (ex) { if (!isAbort(ex)) cErr.appendChild(errorBox(ex)); }
+      finally { cBtn.disabled = false; }
+    });
+    fill(creditP, cForm);
+    await Promise.all([loadReports(), loadPayouts()]);
   }
 
   /* =========================================================================
@@ -1551,7 +2139,7 @@
   window.addEventListener('unhandledrejection', (e) => { if (isAbort(e.reason)) e.preventDefault(); });
   document.getElementById('skip').addEventListener('click', (e) => { e.preventDefault(); main.focus(); });
   window.addEventListener('hashchange', route);
-  loadMeta();
   loadMe();
-  route();
+  // Vocabulary and layout depend on meta (storefront or not), so render after it settles.
+  loadMeta().then(() => { applyChrome(); route(); });
 })();
