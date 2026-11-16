@@ -29,12 +29,20 @@ Zero dependencies; needs Node >= 22.13 (uses `node:sqlite`).
 | `ALLOW_PRIVATE` | unset | `1` permits http and private-network provider URLs (dev/tests only) |
 | `PROBE_MS` | `60000` | Availability probe interval |
 
+## Deploy
+
+Runs on Fly as app `agent-service-market` (one always-on machine in `iad`, 1 GB volume at `/data` for the
+SQLite file and uploaded files). No `fly.toml`: the image is built locally, pushed to
+`registry.fly.io/agent-service-market:<tag>`, and the machine's `config.image` is updated through the
+Machines API. A custom domain only needs a Fly certificate plus new `PUBLIC_URL` and `BRAND` env values.
+
 ## Layout
 
 - `server.js` – HTTP routing, storage, calls, probes, ranking
 - `lib/schema.js` – JSON Schema subset validator and type summaries
 - `lib/net.js` – SSRF-hardened outbound requests to provider URLs
 - `lib/mcp.js` – MCP tools; `lib/docs.js` – llms.txt and OpenAPI
+- `lib/builtin.js` – first-party services (Wikipedia titles, domain checker)
 - `public/` – website (directory, service pages, publish form, worker console)
 
 ## Not built yet
