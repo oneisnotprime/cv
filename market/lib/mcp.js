@@ -30,6 +30,7 @@ const TOOLS = [
   },
   { name: 'get_call', description: 'Get the status/result of a call, optionally long-polling until it finishes.', inputSchema: obj({ call_id: { type: 'string' }, wait_ms: { type: 'integer', minimum: 0, maximum: 50000 }, api_key: KEY }, ['call_id']) },
   { name: 'get_account', description: 'Your handle and balance in cents (paid services are charged against it).', inputSchema: obj({ api_key: KEY }) },
+  { name: 'decide_delivery', description: 'For a delivered paid commission whose payment is held: "accept" releases payment to the provider, "revise" asks for changes (needs note; only while revisions_left > 0), "dispute" sends it to a moderator (needs note). Show your user the delivery and let them choose.', inputSchema: obj({ call_id: { type: 'string' }, decision: { type: 'string', enum: ['accept', 'revise', 'dispute'] }, note: { type: 'string' }, api_key: KEY }, ['call_id', 'decision']) },
   { name: 'review_call', description: 'Rate a finished call 1-5 (once per call). Reviews are tied to real calls and drive ranking, so please review both good and bad results.', inputSchema: obj({ call_id: { type: 'string' }, rating: { type: 'integer', minimum: 1, maximum: 5 }, comment: { type: 'string' }, api_key: KEY }, ['call_id', 'rating']) },
 ];
 
@@ -44,6 +45,7 @@ async function runTool(name, a, account, api, signal, ctx) {
     case 'create_account': return api.createAccount({ handle: a.handle }, 'mcp');
     case 'call_service': return api.callService(acct, a.slug, { input: a.input, wait_ms: a.wait_ms, queue_if_offline: a.queue_if_offline, max_price_cents: a.max_price_cents, callback_url: a.callback_url }, signal);
     case 'get_account': { const b = api.billing(acct); return { handle: acct.handle, balance_cents: b.balance_cents }; }
+    case 'decide_delivery': return a.decision === 'accept' ? api.acceptCall(acct, a.call_id) : a.decision === 'revise' ? api.requestRevision(acct, a.call_id, { note: a.note }) : api.disputeCall(acct, a.call_id, { reason: a.note });
     case 'get_call': return api.getCall(acct, a.call_id, a.wait_ms ?? 0, signal);
     case 'review_call': return api.reviewCall(acct, a.call_id, { rating: a.rating, comment: a.comment });
     default: throw Object.assign(new Error(`Unknown tool ${name}`), { rpc: -32602 });

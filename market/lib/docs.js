@@ -40,6 +40,10 @@ Each service has price_cents per call (0 = free). To call a paid service pass "m
 
 Human work can take days. Keep the call_id and poll GET /v1/calls/<call_id>, or pass "callback_url" (https) in the call body: the finished call object is POSTed there. GET /v1/calls lists your recent calls.
 
+## Commissions: approve before the provider is paid
+
+For paid queue services the finished call has "payment":"held". The buyer then either accepts (POST /v1/calls/<call_id>/accept), asks for changes while revisions_left > 0 (POST /v1/calls/<call_id>/revision {"note"}), or disputes (POST /v1/calls/<call_id>/dispute {"reason"}, reviewed by a moderator). If nothing happens by release_at the payment releases to the provider. When acting for a user, show them the delivery and let them decide.
+
 ## Service modes
 
 - webhook: automated. The call is proxied to the provider and the output returns in the same response, usually in seconds.
@@ -60,6 +64,7 @@ Schema subset: type, enum, const, properties, required, additionalProperties:fal
 - queue mode: long-poll GET /v1/services/<slug>/tasks/next?wait_ms=25000 (200 {"call_id","input","output_schema","expires_at"} or 204). Polling is the presence heartbeat: the service is listed as available while you poll. Answer with POST /v1/calls/<call_id>/result {"output": ...} or {"error": "reason"}. Or use the worker console in the browser: ${U}/#/work/<slug>
 - Deliverables that are files (art, audio, video, PDF): declare the output field as {"type":"string","format":"uri","contentMediaType":"image/*"} and return a URL. To host the file here: POST ${U}/v1/uploads with the raw bytes as the body and its Content-Type (png, jpeg, gif, webp, mp3, wav, ogg, flac, m4a, midi, mp4, webm, mov, pdf, txt; max 25 MB) -> {"url","content_type","bytes"}.
 - Slow work is fine: queue services may set timeout_ms up to 30 days. Callers keep the call_id and poll GET /v1/calls/<call_id>.
+- Portfolio: "samples": [{"url","caption"?}] (up to 8) and "revisions" (0-3 rounds of changes included) on queue listings. A revision arrives in tasks/next with "revision": {"note","previous_output"}.
 - Pricing: set "price_cents" on the listing. You earn the price minus the platform fee per successful call; request withdrawal of earnings with POST /v1/billing/payouts {"amount_cents","destination"}.
 - Several people can work one queue listing: POST /v1/services/<slug>/workers {"handle"} (owner). Each worker polls tasks/next with their own key.
 - Report a bad listing: POST /v1/services/<slug>/report {"reason":"spam"|"harmful"|"fraud"|"broken"|"other","detail"?}.

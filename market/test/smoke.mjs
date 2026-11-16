@@ -24,7 +24,7 @@ const hook = http.createServer((req, res) => {
 
 const srv = spawn(process.execPath, ['--no-warnings', 'server.js'], {
   cwd: path.join(import.meta.dirname, '..'), stdio: ['ignore', 'pipe', 'inherit'],
-  env: { ...process.env, PORT, DB_PATH: dbPath, ALLOW_PRIVATE: '1', PUBLIC_URL: BASE, BRAND: 'TestBrand', HOUSE_KEY: 'mk_house', PROBE_MS: '1000', STRIPE_SECRET_KEY: 'sk_test_x', STRIPE_WEBHOOK_SECRET: 'whsec_test' },
+  env: { ...process.env, PORT, DB_PATH: dbPath, ALLOW_PRIVATE: '1', PUBLIC_URL: BASE, BRAND: 'TestBrand', HOUSE_KEY: 'mk_house', PROBE_MS: '1000', STRIPE_SECRET_KEY: 'sk_test_x', STRIPE_WEBHOOK_SECRET: 'whsec_test', REVIEW_MS: '3000' },
 });
 await new Promise((r) => srv.stdout.on('data', (d) => String(d).includes('listening') && r()));
 
@@ -146,7 +146,7 @@ try {
     const rpc = (method, params, key) => call('POST', '/mcp', { jsonrpc: '2.0', id: 1, method, params }, key);
     assert.equal((await rpc('initialize', { protocolVersion: '2025-06-18' })).json.result.serverInfo.name, 'TestBrand');
     assert.equal((await call('POST', '/mcp', { jsonrpc: '2.0', method: 'notifications/initialized' })).status, 202);
-    assert.equal((await rpc('tools/list')).json.result.tools.length, 7);
+    assert.equal((await rpc('tools/list')).json.result.tools.length, 8);
     await call('PATCH', '/v1/services/uppercase-text', { status: 'active' }, provider);
     const s = await rpc('tools/call', { name: 'search_services', arguments: { query: 'uppercase', available_only: false } });
     assert.equal(s.json.result.structuredContent.services[0].slug, 'uppercase-text');
@@ -270,6 +270,54 @@ try {
     assert.deepEqual(art.json.service.media, ['image']);
     assert.equal(art.json.service.price_cents, 4000);
     assert.equal((await call('GET', '/v1/services?media=1')).json.services.length, 1);
+  });
+  await t('commissions: hold, revise, accept, dispute, auto-release', async () => {
+    const slug = 'ink-drawings', img = (n) => ({ image_url: `https://example.com/${n}.png` });
+    assert.equal((await call('PATCH', `/v1/services/${slug}`, { samples: [{ url: 'javascript:alert(1)' }] }, provider)).status, 422);
+    const pf = await call('PATCH', `/v1/services/${slug}`, { samples: [{ url: 'https://example.com/s.png', caption: 'Heron' }] }, provider);
+    assert.equal(pf.json.service.samples[0].caption, 'Heron');
+    assert.equal(pf.json.service.revisions, 1);
+    await call('POST', '/v1/admin/credit', { handle: 'agent', amount_cents: 20000 }, 'mk_house');
+    const start = await bal(agent), pstart = await bal(provider);
+    const commission = async () => {
+      await call('GET', `/v1/services/${slug}/tasks/next?wait_ms=0`, null, provider);
+      const c = await call('POST', `/v1/services/${slug}/call`, { input: { brief: 'a heron' }, max_price_cents: 4000, wait_ms: 0 }, agent);
+      assert.equal(c.status, 202);
+      const task = await call('GET', `/v1/services/${slug}/tasks/next?wait_ms=500`, null, provider);
+      assert.equal(task.json.call_id, c.json.call_id);
+      await call('POST', `/v1/calls/${c.json.call_id}/result`, { output: img(1) }, provider);
+      return c.json.call_id;
+    };
+    // 1: held -> revise -> redeliver -> accept
+    const a = await commission();
+    let g = (await call('GET', `/v1/calls/${a}`, null, agent)).json;
+    assert.equal(g.status, 'done'); assert.equal(g.payment, 'held'); assert.equal(g.revisions_left, 1); assert.ok(g.release_at > Date.now());
+    assert.equal(await bal(provider), pstart);
+    assert.equal((await call('POST', `/v1/calls/${a}/accept`, null, provider)).status, 404);
+    g = (await call('POST', `/v1/calls/${a}/revision`, { note: 'More mist please' }, agent)).json;
+    assert.equal(g.status, 'pending'); assert.equal(g.revision_note, 'More mist please'); assert.equal(g.revisions_left, 0);
+    const again = await call('GET', `/v1/services/${slug}/tasks/next?wait_ms=500`, null, provider);
+    assert.equal(again.json.revision.note, 'More mist please');
+    assert.deepEqual(again.json.revision.previous_output, img(1));
+    await call('POST', `/v1/calls/${a}/result`, { output: img(2) }, provider);
+    assert.equal((await call('POST', `/v1/calls/${a}/revision`, { note: 'and again' }, agent)).json.error.code, 'no_revisions_left');
+    g = (await call('POST', `/v1/calls/${a}/accept`, null, agent)).json;
+    assert.equal(g.payment, 'released'); assert.deepEqual(g.output, img(2));
+    assert.equal(await bal(provider), pstart + 3600);
+    assert.equal((await call('POST', `/v1/calls/${a}/accept`, null, agent)).status, 409);
+    // 2: dispute -> moderator refunds
+    const b = await commission();
+    assert.equal((await call('POST', `/v1/calls/${b}/dispute`, { reason: 'This is not what was described at all' }, agent)).json.payment, 'disputed');
+    const ds = (await call('GET', '/v1/admin/disputes', null, 'mk_house')).json.disputes;
+    assert.equal(ds.length, 1); assert.equal(ds[0].buyer, 'agent');
+    assert.equal((await call('POST', `/v1/admin/disputes/${b}`, { action: 'refund' }, 'mk_house')).json.payment, 'refunded');
+    assert.equal(await bal(agent), start - 4000);
+    // 3: buyer does nothing -> releases after the review window
+    const c3 = await commission();
+    await new Promise((r) => setTimeout(r, 9000));
+    assert.equal((await call('GET', `/v1/calls/${c3}`, null, agent)).json.payment, 'released');
+    assert.equal(await bal(provider), pstart + 7200);
+    assert.equal(await bal(agent), start - 8000);
   });
   await t('delete', async () => {
     assert.equal((await call('DELETE', '/v1/services/uppercase-text', null, provider)).status, 204);

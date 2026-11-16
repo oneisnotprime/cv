@@ -36,6 +36,9 @@ const STRIPE_KEY = process.env.STRIPE_SECRET_KEY || '';
 const STRIPE_WH = process.env.STRIPE_WEBHOOK_SECRET || '';
 const PAYMENTS = !!(STRIPE_KEY && STRIPE_WH);
 const ADMIN = 'house';
+const REVIEW_MS = Number(process.env.REVIEW_MS || 72 * 3600_000); // buyer's window to accept, ask for changes or dispute
+// Extra hostnames this deployment answers on as the main site (docs and links use the host you came in on).
+const SITE_HOSTS = new Set((process.env.SITE_HOSTS || 'knotto.com,www.knotto.com').split(',').map((h) => h.trim().toLowerCase()).filter(Boolean));
 // A second front door on the same backend: only human-made media listings, different name and copy.
 const STOREFRONT = {
   key: 'creative',
@@ -82,6 +85,14 @@ addCol('calls', 'price_cents', 'INTEGER NOT NULL DEFAULT 0');
 addCol('calls', 'settled', 'INTEGER NOT NULL DEFAULT 0');
 addCol('calls', 'callback_url', 'TEXT');
 addCol('calls', 'claimed_by', 'INTEGER');
+addCol('calls', 'payment', 'TEXT');
+addCol('calls', 'release_at', 'INTEGER');
+addCol('calls', 'revisions_used', 'INTEGER NOT NULL DEFAULT 0');
+addCol('calls', 'revision_note', 'TEXT');
+addCol('calls', 'dispute_reason', 'TEXT');
+addCol('calls', 'disputed_at', 'INTEGER');
+addCol('services', 'samples', "TEXT NOT NULL DEFAULT '[]'");
+addCol('services', 'revisions', 'INTEGER NOT NULL DEFAULT 1');
 db.exec(`
 CREATE TABLE IF NOT EXISTS ledger (
   id INTEGER PRIMARY KEY, account_id INTEGER NOT NULL REFERENCES accounts(id), at INTEGER NOT NULL,
@@ -150,7 +161,7 @@ function present(s) {
     owner: ownerHandle.get(s.owner_id)?.handle, status: s.status, available: isAvailable(s),
     input_schema, output_schema, input_summary: summarize(input_schema), output_summary: summarize(output_schema),
     example_input: s.example_input ? JSON.parse(s.example_input) : null, timeout_ms: s.timeout_ms, created_at: s.created_at,
-    price_cents: s.price_cents, media: [...mediaKinds(output_schema)],
+    price_cents: s.price_cents, media: [...mediaKinds(output_schema)], samples: JSON.parse(s.samples), revisions: s.mode === 'queue' ? s.revisions : 0,
     call_url: `${PUBLIC_URL}/v1/services/${s.slug}/call`,
     stats: {
       rating: s.rating, reviews: s.reviews_n, calls: s.calls_n, success_rate: s.success_rate,
@@ -160,12 +171,15 @@ function present(s) {
   };
 }
 function presentCall(c, slug) {
+  const svc = q('SELECT revisions, mode FROM services WHERE id = ?').get(c.service_id);
   return {
     call_id: c.id, service: slug, status: c.status, input: JSON.parse(c.input),
     ...(c.output != null ? { output: JSON.parse(c.output) } : {}),
     ...(c.error ? { error: { code: 'call_failed', message: c.error } } : {}),
     ...(c.latency_ms != null ? { latency_ms: c.latency_ms } : {}),
-    price_cents: c.price_cents, created_at: c.created_at, expires_at: c.expires_at,
+    price_cents: c.price_cents, payment: c.payment ?? null, release_at: c.payment === 'held' ? c.release_at ?? null : null,
+    revisions_left: svc?.mode === 'queue' ? Math.max(0, svc.revisions - c.revisions_used) : 0, revision_note: c.revision_note ?? null,
+    created_at: c.created_at, expires_at: c.expires_at,
     reviewed: !!q('SELECT 1 FROM reviews WHERE call_id = ?').get(c.id),
   };
 }
@@ -241,6 +255,15 @@ function parseSchema(v, name) {
   need(!errs.length, 422, 'invalid_schema', `${name} is not a supported JSON Schema`, errs);
   return v;
 }
+function parseSamples(v) {
+  need(Array.isArray(v) && v.length <= 8, 422, 'invalid_field', 'samples must be an array of at most 8 {url, caption?} items');
+  return v.map((x, i) => {
+    let u; try { u = new URL(String(x?.url)); } catch { u = null; }
+    need(u && (u.protocol === 'https:' || u.protocol === 'http:') && String(x.url).length <= 500, 422, 'invalid_field', `samples[${i}].url must be an http(s) URL`);
+    const caption = typeof x.caption === 'string' ? x.caption.trim().slice(0, 200) : '';
+    return caption ? { url: String(x.url), caption } : { url: String(x.url) };
+  });
+}
 function endpointFields(body, mode) {
   if (mode !== 'webhook') return { endpoint_url: null, health_url: null };
   const bad = checkUrl(String(body.endpoint_url || ''));
@@ -265,6 +288,7 @@ function createService(account, body) {
     need(!errs.length, 422, 'invalid_example', 'example_input does not match input_schema', errs);
   }
   const { endpoint_url, health_url } = endpointFields(body, mode);
+  const samples = body.samples != null ? parseSamples(body.samples) : [];
   const timeout_ms = mode === 'webhook' ? clamp(body.timeout_ms, 1000, 120_000, 30_000) : clamp(body.timeout_ms, 10_000, 30 * 864e5, 600_000);
   const base = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 48) || 'service';
   let slug = base;
@@ -274,7 +298,7 @@ function createService(account, body) {
       input_schema, output_schema, example_input, timeout_ms, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
     .run(slug, account.id, name, description, JSON.stringify(tags), mode, endpoint_url, health_url, webhook_secret,
       JSON.stringify(input_schema), JSON.stringify(output_schema), body.example_input != null ? JSON.stringify(body.example_input) : null, timeout_ms, now());
-  q('UPDATE services SET price_cents = ? WHERE slug = ?').run(clamp(body.price_cents, 0, 100_000, 0), slug);
+  q('UPDATE services SET price_cents = ?, samples = ?, revisions = ? WHERE slug = ?').run(clamp(body.price_cents, 0, 100_000, 0), JSON.stringify(samples), clamp(body.revisions, 0, 3, 1), slug);
   const s = svcBySlug.get(slug);
   if (mode === 'webhook') probe(s).catch(() => {});
   return { service: present(svcBySlug.get(slug)), ...(webhook_secret ? { webhook_secret } : {}) };
@@ -292,6 +316,8 @@ function updateService(account, slug, body) {
   }
   q('UPDATE services SET status=?, description=?, endpoint_url=?, health_url=? WHERE id=?').run(status, description, endpoint_url, health_url, s.id);
   if (body?.price_cents != null) q('UPDATE services SET price_cents = ? WHERE id = ?').run(clamp(body.price_cents, 0, 100_000, 0), s.id);
+  if (body?.samples != null) q('UPDATE services SET samples = ? WHERE id = ?').run(JSON.stringify(parseSamples(body.samples)), s.id);
+  if (body?.revisions != null) q('UPDATE services SET revisions = ? WHERE id = ?').run(clamp(body.revisions, 0, 3, 1), s.id);
   const fresh = svcBySlug.get(s.slug);
   if (fresh.mode === 'webhook' && status === 'active') probe(fresh).catch(() => {});
   return { service: present(svcBySlug.get(s.slug)) };
@@ -333,13 +359,20 @@ function move(accountId, amount, kind, callId = null, note = null) {
 function settle(id, status) {
   const c = q('SELECT c.price_cents, c.settled, c.caller_id, s.owner_id, s.slug FROM calls c JOIN services s ON s.id = c.service_id WHERE c.id = ?').get(id);
   if (!c || c.settled || !c.price_cents) return;
-  q('UPDATE calls SET settled = 1 WHERE id = ?').run(id);
+  q('UPDATE calls SET settled = 1, payment = ?, release_at = NULL WHERE id = ?').run(status === 'done' ? 'released' : 'refunded', id);
   if (status === 'done') {
     const fee = Math.round(c.price_cents * FEE_PCT / 100);
     move(c.owner_id, c.price_cents, 'earning', id, c.slug);
     if (fee) move(c.owner_id, -fee, 'fee', id, `${FEE_PCT}% platform fee`);
     q('UPDATE accounts SET earned_cents = earned_cents + ? WHERE id = ?').run(c.price_cents - fee, c.owner_id);
   } else move(c.caller_id, c.price_cents, 'refund', id, `call ${status}`);
+}
+// Human work is paid when the buyer accepts it (or the review window lapses); automated calls pay at once.
+function holdOrSettle(id, status) {
+  const c = q('SELECT c.price_cents, c.settled, s.mode FROM calls c JOIN services s ON s.id = c.service_id WHERE c.id = ?').get(id);
+  if (!c || c.settled || !c.price_cents) return;
+  if (status === 'done' && c.mode === 'queue') q(`UPDATE calls SET payment = 'held', release_at = ? WHERE id = ?`).run(now() + REVIEW_MS, id);
+  else settle(id, status);
 }
 async function notifyCallback(id) {
   const c = q('SELECT c.*, s.slug FROM calls c JOIN services s ON s.id = c.service_id WHERE c.id = ?').get(id);
@@ -359,7 +392,8 @@ function finishCall(id, serviceId, status, { output, error } = {}) {
   const t = now();
   q('UPDATE calls SET status=?, output=?, error=?, completed_at=?, latency_ms=? WHERE id=?')
     .run(status, output !== undefined ? JSON.stringify(output) : null, error || null, t, t - c.created_at, id);
-  settle(id, status);
+  q('UPDATE calls SET revision_note = NULL WHERE id = ?').run(id);
+  holdOrSettle(id, status);
   refreshStats(serviceId);
   wake(callWaiters, id);
   notifyCallback(id).catch(() => {});
@@ -456,7 +490,10 @@ async function nextTask(account, slug, waitMs, signal) {
     const c = q(`SELECT * FROM calls WHERE service_id = ? AND status = 'pending' AND expires_at > ? ORDER BY created_at LIMIT 1`).get(s.id, now());
     if (c) {
       q(`UPDATE calls SET status = 'claimed', claimed_at = ?, claimed_by = ? WHERE id = ?`).run(now(), account.id, c.id);
-      return { call_id: c.id, input: JSON.parse(c.input), output_schema: JSON.parse(s.output_schema), created_at: c.created_at, expires_at: c.expires_at };
+      return {
+        call_id: c.id, input: JSON.parse(c.input), output_schema: JSON.parse(s.output_schema), created_at: c.created_at, expires_at: c.expires_at,
+        ...(c.revision_note ? { revision: { note: c.revision_note, previous_output: c.output != null ? JSON.parse(c.output) : null } } : {}),
+      };
     }
     const left = deadline - now();
     if (left <= 0 || signal?.aborted) return null;
@@ -480,6 +517,37 @@ function submitResult(account, id, body) {
     finishCall(c.id, c.service_id, 'done', { output: body.output });
   }
   return { call_id: c.id, status: q('SELECT status FROM calls WHERE id = ?').get(c.id).status };
+}
+
+// ---------- buyer decisions on delivered work ----------
+function buyerCall(account, id) {
+  requireAccount(account);
+  const c = q('SELECT c.*, s.mode, s.revisions, s.timeout_ms, s.slug FROM calls c JOIN services s ON s.id = c.service_id WHERE c.id = ?').get(String(id));
+  need(c && c.caller_id === account.id, 404, 'not_found', 'No such call made by you');
+  return c;
+}
+function acceptCall(account, id) {
+  const c = buyerCall(account, id);
+  need(c.status === 'done' && c.payment === 'held', 409, 'not_held', 'There is no held payment to release on this call');
+  settle(c.id, 'done');
+  return getCall(account, c.id, 0);
+}
+function requestRevision(account, id, body) {
+  const c = buyerCall(account, id);
+  const open = c.payment === 'held' || (!c.price_cents && now() - c.completed_at < REVIEW_MS);
+  need(c.mode === 'queue' && c.status === 'done' && open, 409, 'not_revisable', 'Changes can only be requested on a delivered commission that has not been accepted yet');
+  need(c.revisions_used < c.revisions, 409, 'no_revisions_left', 'No rounds of changes are left on this commission');
+  const note = str(body?.note, 'note', 3, 2000);
+  q(`UPDATE calls SET status = 'pending', claimed_at = NULL, revision_note = ?, revisions_used = revisions_used + 1, release_at = NULL, expires_at = ? WHERE id = ?`).run(note, now() + c.timeout_ms, c.id);
+  wake(taskWaiters, c.service_id, false);
+  return getCall(account, c.id, 0);
+}
+function disputeCall(account, id, body) {
+  const c = buyerCall(account, id);
+  need(c.status === 'done' && c.payment === 'held', 409, 'not_held', 'Only a delivery whose payment is still held can be disputed');
+  const reason = str(body?.reason, 'reason', 10, 2000);
+  q(`UPDATE calls SET payment = 'disputed', release_at = NULL, dispute_reason = ?, disputed_at = ? WHERE id = ?`).run(reason, now(), c.id);
+  return getCall(account, c.id, 0);
 }
 
 function reviewCall(account, id, body) {
@@ -525,9 +593,14 @@ async function probeAll() {
 }
 function sweep() {
   const t = now();
-  for (const c of q(`SELECT id, service_id FROM calls WHERE status IN ('pending','claimed') AND expires_at <= ?`).all(t)) {
-    finishCall(c.id, c.service_id, 'timeout', { error: 'no result before the service timeout' });
+  for (const c of q(`SELECT id, service_id, revisions_used, output, payment FROM calls WHERE status IN ('pending','claimed') AND expires_at <= ?`).all(t)) {
+    if (c.revisions_used && c.output != null) {
+      // A requested revision never arrived: the earlier delivery stands and the buyer decides again.
+      q(`UPDATE calls SET status = 'done', revision_note = NULL, release_at = ? WHERE id = ?`).run(c.payment === 'held' ? t + REVIEW_MS : null, c.id);
+      wake(callWaiters, c.id);
+    } else finishCall(c.id, c.service_id, 'timeout', { error: 'no result before the service timeout' });
   }
+  for (const c of q(`SELECT id FROM calls WHERE payment = 'held' AND status = 'done' AND release_at <= ?`).all(t)) { settle(c.id, 'done'); wake(callWaiters, c.id); }
   // A worker that claimed a task and vanished gives it back after 5 minutes.
   q(`UPDATE calls SET status = 'pending', claimed_at = NULL WHERE status = 'claimed' AND claimed_at < ?`).run(t - 300_000);
   // A worker answering a claimed task is not polling, but is still present.
@@ -607,6 +680,17 @@ const admin = {
     need(Number.isInteger(amt) && amt !== 0 && Math.abs(amt) <= 1_000_000, 422, 'invalid_field', 'amount_cents must be a non-zero integer');
     move(to.id, amt, 'grant', null, typeof body.note === 'string' ? body.note.slice(0, 200) : null);
     return { handle: to.handle, balance_cents: q('SELECT balance_cents b FROM accounts WHERE id = ?').get(to.id).b };
+  },
+  disputes: (a) => { requireAdmin(a); return { disputes: q(`SELECT c.id call_id, s.slug service, a.handle buyer, c.price_cents, c.dispute_reason reason, c.disputed_at created_at, c.input, c.output
+    FROM calls c JOIN services s ON s.id = c.service_id JOIN accounts a ON a.id = c.caller_id WHERE c.payment = 'disputed' ORDER BY c.disputed_at`).all()
+    .map((d) => ({ ...d, input: JSON.parse(d.input), output: d.output != null ? JSON.parse(d.output) : null })) }; },
+  resolveDispute: (a, id, body) => {
+    requireAdmin(a);
+    const c = q('SELECT id, payment FROM calls WHERE id = ?').get(String(id));
+    need(c && c.payment === 'disputed', 404, 'not_found', 'No open dispute on that call');
+    need(body?.action === 'release' || body?.action === 'refund', 422, 'invalid_field', 'action must be "release" or "refund"');
+    settle(c.id, body.action === 'release' ? 'done' : 'refund');
+    return { call_id: c.id, payment: body.action === 'release' ? 'released' : 'refunded' };
   },
   payouts: (a) => { requireAdmin(a); return { payouts: q('SELECT p.id, a.handle, p.amount_cents, p.destination, p.status, p.created_at FROM payouts p JOIN accounts a ON a.id = p.account_id ORDER BY p.status = \'requested\' DESC, p.created_at DESC LIMIT 200').all() }; },
   setPayout: (a, id, body) => {
@@ -724,12 +808,13 @@ const api = {
       calls: q('SELECT count(*) n FROM calls').get().n,
     },
   }),
-  billing, createAccount, listServices, serviceDetail, createService, updateService, callService, getCall, nextTask, submitResult, reviewCall, authenticate,
+  billing, acceptCall, requestRevision, disputeCall, createAccount, listServices, serviceDetail, createService, updateService, callService, getCall, nextTask, submitResult, reviewCall, authenticate,
 };
 const ctx = { BRAND, PUBLIC_URL };
 function siteFor(host) {
   const h = String(host || '').toLowerCase().replace(/:\d+$/, '');
-  return STOREFRONT.hosts.has(h) ? { BRAND: STOREFRONT.brand, PUBLIC_URL: `https://${h}`, storefront: true } : ctx;
+  if (STOREFRONT.hosts.has(h)) return { BRAND: STOREFRONT.brand, PUBLIC_URL: `https://${h}`, storefront: true };
+  return SITE_HOSTS.has(h) ? { BRAND, PUBLIC_URL: `https://${h}` } : ctx;
 }
 
 const routes = [
@@ -757,8 +842,13 @@ const routes = [
   ['GET', /^\/v1\/services\/([^/]+)\/tasks\/next$/, async (c, slug) => { const t = await nextTask(c.account, slug, c.query.get('wait_ms') ?? 25_000, c.signal); return t ? t : [204, null]; }],
   ['GET', /^\/v1\/calls\/([^/]+)$/, (c, id) => getCall(c.account, id, c.query.get('wait_ms') ?? 0, c.signal)],
   ['POST', /^\/v1\/calls\/([^/]+)\/result$/, (c, id) => submitResult(c.account, id, c.body)],
+  ['POST', /^\/v1\/calls\/([^/]+)\/accept$/, (c, id) => acceptCall(c.account, id)],
+  ['POST', /^\/v1\/calls\/([^/]+)\/revision$/, (c, id) => requestRevision(c.account, id, c.body)],
+  ['POST', /^\/v1\/calls\/([^/]+)\/dispute$/, (c, id) => disputeCall(c.account, id, c.body)],
+  ['GET', /^\/v1\/admin\/disputes$/, (c) => admin.disputes(c.account)],
+  ['POST', /^\/v1\/admin\/disputes\/([^/]+)$/, (c, id) => admin.resolveDispute(c.account, id, c.body)],
   ['POST', /^\/v1\/calls\/([^/]+)\/review$/, (c, id) => [201, reviewCall(c.account, id, c.body)]],
-  ['GET', /^\/v1\/calls$/, (c) => ({ calls: q(`SELECT c.id call_id, s.slug service, c.status, c.price_cents, c.created_at FROM calls c JOIN services s ON s.id = c.service_id
+  ['GET', /^\/v1\/calls$/, (c) => ({ calls: q(`SELECT c.id call_id, s.slug service, c.status, c.price_cents, c.payment, c.created_at FROM calls c JOIN services s ON s.id = c.service_id
     WHERE c.caller_id = ? ORDER BY c.created_at DESC LIMIT 50`).all(requireAccount(c.account).id) })],
   ['GET', /^\/v1\/services\/([^/]+)\/workers$/, (c, slug) => listWorkers(c.account, slug)],
   ['POST', /^\/v1\/services\/([^/]+)\/workers$/, (c, slug) => [201, addWorker(c.account, slug, c.body)]],
