@@ -10,6 +10,7 @@ const TOOLS = [
       query: { type: 'string', description: 'What you need done, e.g. "rate image quality" or "wikipedia article lookup"' },
       available_only: { type: 'boolean', description: 'Only return services that can answer right now (default true)' },
       mode: { type: 'string', enum: ['webhook', 'queue'], description: 'webhook = automated, answers in seconds; queue = answered by workers (often humans), may take minutes' },
+      max_price_cents: { type: 'integer', minimum: 0, description: 'Only services costing at most this per call (0 = free only)' },
       limit: { type: 'integer', minimum: 1, maximum: 50 },
     }),
   },
@@ -22,23 +23,27 @@ const TOOLS = [
       slug: { type: 'string' }, input: { description: 'Must validate against the service input_schema' },
       wait_ms: { type: 'integer', minimum: 0, maximum: 50000, description: 'How long to wait for a queue service (default 25000)' },
       queue_if_offline: { type: 'boolean', description: 'Queue the task even if no worker is online right now (default false)' },
+      max_price_cents: { type: 'integer', minimum: 0, description: 'Required for paid services: the most you accept to be charged (must be >= the service price_cents). Only spend what your user has authorized. Failed or timed-out calls are refunded.' },
+      callback_url: { type: 'string', description: 'Optional https URL that receives a POST of the finished call, for slow work' },
       api_key: KEY,
     }, ['slug', 'input']),
   },
   { name: 'get_call', description: 'Get the status/result of a call, optionally long-polling until it finishes.', inputSchema: obj({ call_id: { type: 'string' }, wait_ms: { type: 'integer', minimum: 0, maximum: 50000 }, api_key: KEY }, ['call_id']) },
+  { name: 'get_account', description: 'Your handle and balance in cents (paid services are charged against it).', inputSchema: obj({ api_key: KEY }) },
   { name: 'review_call', description: 'Rate a finished call 1-5 (once per call). Reviews are tied to real calls and drive ranking, so please review both good and bad results.', inputSchema: obj({ call_id: { type: 'string' }, rating: { type: 'integer', minimum: 1, maximum: 5 }, comment: { type: 'string' }, api_key: KEY }, ['call_id', 'rating']) },
 ];
 
-async function runTool(name, a, account, api, signal) {
+async function runTool(name, a, account, api, signal, ctx) {
   const acct = a.api_key ? api.authenticate(a.api_key) : account;
   switch (name) {
     case 'search_services': {
-      const { services } = api.listServices({ q: a.query, available: a.available_only !== false, mode: a.mode, limit: a.limit ?? 10 });
-      return { services: services.map((s) => ({ slug: s.slug, name: s.name, description: s.description, mode: s.mode, available: s.available, input_schema: s.input_schema, output_schema: s.output_schema, example_input: s.example_input, stats: s.stats })) };
+      const { services } = api.listServices({ q: a.query, available: a.available_only !== false, mode: a.mode, limit: a.limit ?? 10, max_price_cents: a.max_price_cents, media: !!ctx.storefront });
+      return { services: services.map((s) => ({ slug: s.slug, name: s.name, description: s.description, mode: s.mode, available: s.available, price_cents: s.price_cents, input_schema: s.input_schema, output_schema: s.output_schema, example_input: s.example_input, stats: s.stats })) };
     }
     case 'get_service': return api.serviceDetail(a.slug);
     case 'create_account': return api.createAccount({ handle: a.handle }, 'mcp');
-    case 'call_service': return api.callService(acct, a.slug, { input: a.input, wait_ms: a.wait_ms, queue_if_offline: a.queue_if_offline }, signal);
+    case 'call_service': return api.callService(acct, a.slug, { input: a.input, wait_ms: a.wait_ms, queue_if_offline: a.queue_if_offline, max_price_cents: a.max_price_cents, callback_url: a.callback_url }, signal);
+    case 'get_account': { const b = api.billing(acct); return { handle: acct.handle, balance_cents: b.balance_cents }; }
     case 'get_call': return api.getCall(acct, a.call_id, a.wait_ms ?? 0, signal);
     case 'review_call': return api.reviewCall(acct, a.call_id, { rating: a.rating, comment: a.comment });
     default: throw Object.assign(new Error(`Unknown tool ${name}`), { rpc: -32602 });
@@ -62,7 +67,7 @@ async function handleOne(msg, account, api, ctx, signal) {
     case 'tools/list': return reply({ tools: TOOLS });
     case 'tools/call': {
       try {
-        const out = await runTool(msg.params?.name, msg.params?.arguments || {}, account, api, signal);
+        const out = await runTool(msg.params?.name, msg.params?.arguments || {}, account, api, signal, ctx);
         return reply({ content: [{ type: 'text', text: JSON.stringify(out) }], structuredContent: out });
       } catch (e) {
         if (e.rpc) return fail(e.rpc, e.message);

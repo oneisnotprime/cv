@@ -6,7 +6,7 @@ export function llmsTxt({ BRAND, PUBLIC_URL: U }) {
 > A marketplace of typed data-in/data-out services for agents. Some are automated endpoints, some are answered by humans. Every service declares a JSON Schema for its input and output. The marketplace tracks verified reviews, response times, uptime, and which services can answer right now, and ranks available services first. Use it when you would otherwise have to ask your user to do a data task by hand.
 
 Base URL: ${U}
-MCP (Streamable HTTP): ${U}/mcp   tools: search_services, get_service, create_account, call_service, get_call, review_call
+MCP (Streamable HTTP): ${U}/mcp   tools: search_services, get_service, create_account, call_service, get_call, get_account, review_call
 OpenAPI: ${U}/openapi.json
 All bodies are JSON. Errors: {"error": {"code", "message", "details"?}}.
 
@@ -32,6 +32,14 @@ All bodies are JSON. Errors: {"error": {"code", "message", "details"?}}.
 4. Review it (1-5, once per call; drives ranking):
    curl -X POST ${U}/v1/calls/<call_id>/review -H 'authorization: Bearer mk_...' -H 'content-type: application/json' -d '{"rating":5,"comment":"fast and correct"}'
 
+## Paid services
+
+Each service has price_cents per call (0 = free). To call a paid service pass "max_price_cents" >= its price; the price is held from your balance and paid to the provider when the call succeeds. Failed and timed-out calls are refunded automatically. 402 insufficient_funds means the account needs funds: a human adds them at ${U}/#/billing. GET /v1/billing shows balance and ledger. Only spend what your user has authorized.
+
+## Slow work
+
+Human work can take days. Keep the call_id and poll GET /v1/calls/<call_id>, or pass "callback_url" (https) in the call body: the finished call object is POSTed there. GET /v1/calls lists your recent calls.
+
 ## Service modes
 
 - webhook: automated. The call is proxied to the provider and the output returns in the same response, usually in seconds.
@@ -52,6 +60,9 @@ Schema subset: type, enum, const, properties, required, additionalProperties:fal
 - queue mode: long-poll GET /v1/services/<slug>/tasks/next?wait_ms=25000 (200 {"call_id","input","output_schema","expires_at"} or 204). Polling is the presence heartbeat: the service is listed as available while you poll. Answer with POST /v1/calls/<call_id>/result {"output": ...} or {"error": "reason"}. Or use the worker console in the browser: ${U}/#/work/<slug>
 - Deliverables that are files (art, audio, video, PDF): declare the output field as {"type":"string","format":"uri","contentMediaType":"image/*"} and return a URL. To host the file here: POST ${U}/v1/uploads with the raw bytes as the body and its Content-Type (png, jpeg, gif, webp, mp3, wav, ogg, flac, m4a, midi, mp4, webm, mov, pdf, txt; max 25 MB) -> {"url","content_type","bytes"}.
 - Slow work is fine: queue services may set timeout_ms up to 30 days. Callers keep the call_id and poll GET /v1/calls/<call_id>.
+- Pricing: set "price_cents" on the listing. You earn the price minus the platform fee per successful call; request withdrawal of earnings with POST /v1/billing/payouts {"amount_cents","destination"}.
+- Several people can work one queue listing: POST /v1/services/<slug>/workers {"handle"} (owner). Each worker polls tasks/next with their own key.
+- Report a bad listing: POST /v1/services/<slug>/report {"reason":"spam"|"harmful"|"fraud"|"broken"|"other","detail"?}.
 - PATCH /v1/services/<slug> {"status":"paused"|"active"}; DELETE /v1/services/<slug>.
 `;
 }

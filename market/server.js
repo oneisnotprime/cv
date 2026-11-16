@@ -31,6 +31,18 @@ const UPLOAD_TYPES = {
 };
 const EXT_TYPES = Object.fromEntries(Object.entries(UPLOAD_TYPES).map(([t, e]) => [e, t]).reverse());
 fs.mkdirSync(FILES_DIR, { recursive: true });
+const FEE_PCT = Number(process.env.FEE_PERCENT || 10);
+const STRIPE_KEY = process.env.STRIPE_SECRET_KEY || '';
+const STRIPE_WH = process.env.STRIPE_WEBHOOK_SECRET || '';
+const PAYMENTS = !!(STRIPE_KEY && STRIPE_WH);
+const ADMIN = 'house';
+// A second front door on the same backend: only human-made media listings, different name and copy.
+const STOREFRONT = {
+  key: 'creative',
+  hosts: new Set((process.env.STOREFRONT_HOSTS || 'makeartforme.com,www.makeartforme.com').split(',').map((h) => h.trim().toLowerCase()).filter(Boolean)),
+  brand: process.env.STOREFRONT_BRAND || 'Make Art For Me',
+  tagline: 'Human-made art, music and video, commissioned by people and their agents.',
+};
 
 // ---------- storage ----------
 const db = new DatabaseSync(DB_PATH);
@@ -61,6 +73,31 @@ CREATE TABLE IF NOT EXISTS reviews (
   id INTEGER PRIMARY KEY, call_id TEXT UNIQUE NOT NULL REFERENCES calls(id) ON DELETE CASCADE,
   service_id INTEGER NOT NULL REFERENCES services(id) ON DELETE CASCADE,
   caller_id INTEGER NOT NULL REFERENCES accounts(id), rating INTEGER NOT NULL, comment TEXT, created_at INTEGER NOT NULL);
+`);
+const addCol = (table, col, def) => { if (!db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === col)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${def}`); };
+addCol('accounts', 'balance_cents', 'INTEGER NOT NULL DEFAULT 0');
+addCol('accounts', 'earned_cents', 'INTEGER NOT NULL DEFAULT 0');
+addCol('services', 'price_cents', 'INTEGER NOT NULL DEFAULT 0');
+addCol('calls', 'price_cents', 'INTEGER NOT NULL DEFAULT 0');
+addCol('calls', 'settled', 'INTEGER NOT NULL DEFAULT 0');
+addCol('calls', 'callback_url', 'TEXT');
+addCol('calls', 'claimed_by', 'INTEGER');
+db.exec(`
+CREATE TABLE IF NOT EXISTS ledger (
+  id INTEGER PRIMARY KEY, account_id INTEGER NOT NULL REFERENCES accounts(id), at INTEGER NOT NULL,
+  kind TEXT NOT NULL, amount_cents INTEGER NOT NULL, call_id TEXT, note TEXT);
+CREATE INDEX IF NOT EXISTS ledger_acct ON ledger(account_id, at);
+CREATE TABLE IF NOT EXISTS workers (
+  service_id INTEGER NOT NULL REFERENCES services(id) ON DELETE CASCADE, account_id INTEGER NOT NULL REFERENCES accounts(id),
+  added_at INTEGER NOT NULL, PRIMARY KEY (service_id, account_id));
+CREATE TABLE IF NOT EXISTS reports (
+  id INTEGER PRIMARY KEY, service_id INTEGER NOT NULL REFERENCES services(id) ON DELETE CASCADE,
+  reporter_id INTEGER NOT NULL REFERENCES accounts(id), reason TEXT NOT NULL, detail TEXT, created_at INTEGER NOT NULL,
+  status TEXT NOT NULL DEFAULT 'open', UNIQUE (service_id, reporter_id));
+CREATE TABLE IF NOT EXISTS payouts (
+  id INTEGER PRIMARY KEY, account_id INTEGER NOT NULL REFERENCES accounts(id), amount_cents INTEGER NOT NULL,
+  destination TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'requested', created_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS stripe_events (id TEXT PRIMARY KEY, at INTEGER NOT NULL);
 `);
 const q = (sql) => db.prepare(sql);
 const now = () => Date.now();
@@ -95,6 +132,17 @@ function isAvailable(s, t = now()) {
 }
 const ownerHandle = q('SELECT handle FROM accounts WHERE id = ?');
 const pendingCount = q(`SELECT count(*) n FROM calls WHERE service_id = ? AND status IN ('pending','claimed')`);
+const presence = new Map(); // service id -> Map<account id, last poll ms> (who is working an inbox right now)
+function workersOnline(id, t = now()) { let n = 0; for (const at of presence.get(id)?.values() || []) if (t - at < PRESENCE_MS) n++; return n; }
+// Which kinds of media file a schema delivers, from contentMediaType annotations.
+function mediaKinds(schema, out = new Set(), depth = 0) {
+  if (!schema || typeof schema !== 'object' || depth > 8) return out;
+  const m = /^(image|audio|video)\//.exec(schema.contentMediaType || '');
+  if (m) out.add(m[1]);
+  for (const sub of Object.values(schema.properties || {})) mediaKinds(sub, out, depth + 1);
+  if (schema.items) mediaKinds(schema.items, out, depth + 1);
+  return out;
+}
 function present(s) {
   const input_schema = JSON.parse(s.input_schema), output_schema = JSON.parse(s.output_schema);
   return {
@@ -102,10 +150,11 @@ function present(s) {
     owner: ownerHandle.get(s.owner_id)?.handle, status: s.status, available: isAvailable(s),
     input_schema, output_schema, input_summary: summarize(input_schema), output_summary: summarize(output_schema),
     example_input: s.example_input ? JSON.parse(s.example_input) : null, timeout_ms: s.timeout_ms, created_at: s.created_at,
+    price_cents: s.price_cents, media: [...mediaKinds(output_schema)],
     call_url: `${PUBLIC_URL}/v1/services/${s.slug}/call`,
     stats: {
       rating: s.rating, reviews: s.reviews_n, calls: s.calls_n, success_rate: s.success_rate,
-      p50_ms: s.p50_ms, p95_ms: s.p95_ms, uptime_7d: s.uptime_7d, pending: pendingCount.get(s.id).n,
+      p50_ms: s.p50_ms, p95_ms: s.p95_ms, uptime_7d: s.uptime_7d, pending: pendingCount.get(s.id).n, workers_online: s.mode === 'queue' ? workersOnline(s.id) : 0,
       last_checked_at: s.mode === 'queue' ? s.last_seen_at : s.last_probe_at,
     },
   };
@@ -116,7 +165,7 @@ function presentCall(c, slug) {
     ...(c.output != null ? { output: JSON.parse(c.output) } : {}),
     ...(c.error ? { error: { code: 'call_failed', message: c.error } } : {}),
     ...(c.latency_ms != null ? { latency_ms: c.latency_ms } : {}),
-    created_at: c.created_at, expires_at: c.expires_at,
+    price_cents: c.price_cents, created_at: c.created_at, expires_at: c.expires_at,
     reviewed: !!q('SELECT 1 FROM reviews WHERE call_id = ?').get(c.id),
   };
 }
@@ -150,12 +199,20 @@ const requireAccount = (a) => { need(a, 401, 'unauthorized', 'Missing or invalid
 // ---------- services ----------
 const svcBySlug = q('SELECT * FROM services WHERE slug = ?');
 function getSvc(slug) { const s = svcBySlug.get(String(slug)); need(s, 404, 'not_found', `No service "${slug}"`); return s; }
+const isWorker = (serviceId, accountId) => !!q('SELECT 1 FROM workers WHERE service_id = ? AND account_id = ?').get(serviceId, accountId);
+function workSvc(account, slug) {
+  const s = getSvc(slug);
+  need(s.owner_id === requireAccount(account).id || isWorker(s.id, account.id), 403, 'forbidden', 'Only the service owner or its workers can do that');
+  return s;
+}
 function ownSvc(account, slug) { const s = getSvc(slug); need(s.owner_id === requireAccount(account).id, 403, 'forbidden', 'Only the service owner can do that'); return s; }
 
-function listServices({ q: query, available, mode, limit: lim } = {}) {
+function listServices({ q: query, available, mode, limit: lim, media, max_price_cents: maxPrice } = {}) {
   const t = now();
   const terms = String(query || '').toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 1);
-  let rows = q(`SELECT * FROM services WHERE status != 'deleted'`).all();
+  let rows = q(`SELECT * FROM services WHERE status != 'suspended'`).all();
+  if (media) rows = rows.filter((s) => mediaKinds(JSON.parse(s.output_schema)).size);
+  if (maxPrice != null && maxPrice !== '') rows = rows.filter((s) => s.price_cents <= Number(maxPrice));
   if (mode === 'webhook' || mode === 'queue') rows = rows.filter((s) => s.mode === mode);
   const scored = [];
   for (const s of rows) {
@@ -217,6 +274,7 @@ function createService(account, body) {
       input_schema, output_schema, example_input, timeout_ms, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
     .run(slug, account.id, name, description, JSON.stringify(tags), mode, endpoint_url, health_url, webhook_secret,
       JSON.stringify(input_schema), JSON.stringify(output_schema), body.example_input != null ? JSON.stringify(body.example_input) : null, timeout_ms, now());
+  q('UPDATE services SET price_cents = ? WHERE slug = ?').run(clamp(body.price_cents, 0, 100_000, 0), slug);
   const s = svcBySlug.get(slug);
   if (mode === 'webhook') probe(s).catch(() => {});
   return { service: present(svcBySlug.get(slug)), ...(webhook_secret ? { webhook_secret } : {}) };
@@ -224,6 +282,7 @@ function createService(account, body) {
 
 function updateService(account, slug, body) {
   const s = ownSvc(account, slug);
+  need(s.status !== 'suspended', 403, 'suspended', 'This listing was suspended by a moderator');
   const status = body?.status ?? s.status;
   need(status === 'active' || status === 'paused', 422, 'invalid_field', 'status must be "active" or "paused"');
   const description = body?.description != null ? str(body.description, 'description', 10, 2000) : s.description;
@@ -232,6 +291,7 @@ function updateService(account, slug, body) {
     ({ endpoint_url, health_url } = endpointFields({ endpoint_url: body.endpoint_url ?? s.endpoint_url, health_url: body.health_url === undefined ? s.health_url : body.health_url }, 'webhook'));
   }
   q('UPDATE services SET status=?, description=?, endpoint_url=?, health_url=? WHERE id=?').run(status, description, endpoint_url, health_url, s.id);
+  if (body?.price_cents != null) q('UPDATE services SET price_cents = ? WHERE id = ?').run(clamp(body.price_cents, 0, 100_000, 0), s.id);
   const fresh = svcBySlug.get(s.slug);
   if (fresh.mode === 'webhook' && status === 'active') probe(fresh).catch(() => {});
   return { service: present(svcBySlug.get(s.slug)) };
@@ -264,20 +324,52 @@ function waitOn(map, key, ms, signal) {
   });
 }
 
+// ---------- money ----------
+function move(accountId, amount, kind, callId = null, note = null) {
+  q('UPDATE accounts SET balance_cents = balance_cents + ? WHERE id = ?').run(amount, accountId);
+  q('INSERT INTO ledger (account_id, at, kind, amount_cents, call_id, note) VALUES (?,?,?,?,?,?)').run(accountId, now(), kind, amount, callId, note);
+}
+// Pay the provider on success, refund the caller otherwise. Runs once per call.
+function settle(id, status) {
+  const c = q('SELECT c.price_cents, c.settled, c.caller_id, s.owner_id, s.slug FROM calls c JOIN services s ON s.id = c.service_id WHERE c.id = ?').get(id);
+  if (!c || c.settled || !c.price_cents) return;
+  q('UPDATE calls SET settled = 1 WHERE id = ?').run(id);
+  if (status === 'done') {
+    const fee = Math.round(c.price_cents * FEE_PCT / 100);
+    move(c.owner_id, c.price_cents, 'earning', id, c.slug);
+    if (fee) move(c.owner_id, -fee, 'fee', id, `${FEE_PCT}% platform fee`);
+    q('UPDATE accounts SET earned_cents = earned_cents + ? WHERE id = ?').run(c.price_cents - fee, c.owner_id);
+  } else move(c.caller_id, c.price_cents, 'refund', id, `call ${status}`);
+}
+async function notifyCallback(id) {
+  const c = q('SELECT c.*, s.slug FROM calls c JOIN services s ON s.id = c.service_id WHERE c.id = ?').get(id);
+  if (!c?.callback_url) return;
+  const body = JSON.stringify(presentCall(c, c.slug));
+  for (const delay of [0, 10_000, 60_000]) {
+    if (delay) await new Promise((r) => setTimeout(r, delay).unref());
+    try {
+      const r = await safeRequest(c.callback_url, { method: 'POST', body, timeout: 10_000, headers: { 'content-type': 'application/json', 'user-agent': 'service-market/1', 'x-market-call-id': id } });
+      if (r.status < 500) return;
+    } catch { /* retry */ }
+  }
+}
+
 function finishCall(id, serviceId, status, { output, error } = {}) {
   const c = q('SELECT created_at FROM calls WHERE id = ?').get(id);
   const t = now();
   q('UPDATE calls SET status=?, output=?, error=?, completed_at=?, latency_ms=? WHERE id=?')
     .run(status, output !== undefined ? JSON.stringify(output) : null, error || null, t, t - c.created_at, id);
+  settle(id, status);
   refreshStats(serviceId);
   wake(callWaiters, id);
+  notifyCallback(id).catch(() => {});
 }
 
 async function callService(account, slug, body, signal) {
   requireAccount(account);
   limit(`call:${account.id}`, 120, 60_000);
   const s = getSvc(slug);
-  need(s.status === 'active', 503, 'service_unavailable', 'This service is paused by its owner');
+  need(s.status === 'active', 503, 'service_unavailable', s.status === 'suspended' ? 'This service is suspended' : 'This service is paused by its owner');
   need(body && typeof body === 'object' && 'input' in body, 422, 'invalid_body', 'Body must be {"input": ...}');
   need(JSON.stringify(body.input).length <= 100_000, 413, 'too_large', 'input exceeds 100 kB');
   const errs = validate(JSON.parse(s.input_schema), body.input);
@@ -286,10 +378,25 @@ async function callService(account, slug, body, signal) {
     need(body.queue_if_offline === true, 503, 'service_unavailable',
       'No worker is online for this service right now. Pick an available service, or pass "queue_if_offline": true to queue the task anyway.');
   }
+  let callback_url = null;
+  if (body.callback_url != null) {
+    const bad = checkUrl(String(body.callback_url));
+    need(!bad, 422, 'invalid_callback', `callback_url ${bad}`);
+    callback_url = String(body.callback_url);
+  }
+  // The owner (and their workers) can exercise their own listing for free.
+  const price = s.owner_id === account.id ? 0 : s.price_cents;
+  if (price) {
+    need(Number(body.max_price_cents) >= price, 402, 'price_not_accepted',
+      `This service costs ${price} cents per call. Pass "max_price_cents": ${price} (or more) to accept the charge.`);
+    const bal = q('SELECT balance_cents b FROM accounts WHERE id = ?').get(account.id).b;
+    need(bal >= price, 402, 'insufficient_funds', `Balance is ${bal} cents; this call costs ${price}. Add funds at ${PUBLIC_URL}/#/billing`);
+  }
   const id = `c_${rand(10)}`;
   const t = now();
-  q('INSERT INTO calls (id, service_id, caller_id, input, status, created_at, expires_at) VALUES (?,?,?,?,?,?,?)')
-    .run(id, s.id, account.id, JSON.stringify(body.input), s.mode === 'queue' ? 'pending' : 'running', t, t + s.timeout_ms);
+  q('INSERT INTO calls (id, service_id, caller_id, input, status, created_at, expires_at, price_cents, callback_url) VALUES (?,?,?,?,?,?,?,?,?)')
+    .run(id, s.id, account.id, JSON.stringify(body.input), s.mode === 'queue' ? 'pending' : 'running', t, t + s.timeout_ms, price, callback_url);
+  if (price) move(account.id, -price, 'hold', id, s.slug);
 
   if (s.mode === 'queue') {
     wake(taskWaiters, s.id, false);
@@ -327,7 +434,7 @@ async function getCall(account, id, waitMs, signal) {
   requireAccount(account);
   const load = () => q('SELECT c.*, s.slug, s.owner_id FROM calls c JOIN services s ON s.id = c.service_id WHERE c.id = ?').get(String(id));
   let c = load();
-  need(c && (c.caller_id === account.id || c.owner_id === account.id), 404, 'not_found', 'No such call');
+  need(c && (c.caller_id === account.id || c.owner_id === account.id || isWorker(c.service_id, account.id)), 404, 'not_found', 'No such call');
   const wait = clamp(waitMs, 0, 50_000, 0);
   if (wait && (c.status === 'pending' || c.status === 'claimed')) {
     await waitOn(callWaiters, c.id, wait, signal);
@@ -338,15 +445,17 @@ async function getCall(account, id, waitMs, signal) {
 
 // Worker long-poll. Polling doubles as the presence heartbeat.
 async function nextTask(account, slug, waitMs, signal) {
-  const s = ownSvc(account, slug);
+  const s = workSvc(account, slug);
   need(s.mode === 'queue', 409, 'wrong_mode', 'Only queue-mode services have a task inbox');
   const seen = q('UPDATE services SET last_seen_at = ? WHERE id = ?');
   const deadline = now() + clamp(waitMs, 0, 50_000, 25_000);
   for (;;) {
     seen.run(now(), s.id);
+    if (!presence.has(s.id)) presence.set(s.id, new Map());
+    presence.get(s.id).set(account.id, now());
     const c = q(`SELECT * FROM calls WHERE service_id = ? AND status = 'pending' AND expires_at > ? ORDER BY created_at LIMIT 1`).get(s.id, now());
     if (c) {
-      q(`UPDATE calls SET status = 'claimed', claimed_at = ? WHERE id = ?`).run(now(), c.id);
+      q(`UPDATE calls SET status = 'claimed', claimed_at = ?, claimed_by = ? WHERE id = ?`).run(now(), account.id, c.id);
       return { call_id: c.id, input: JSON.parse(c.input), output_schema: JSON.parse(s.output_schema), created_at: c.created_at, expires_at: c.expires_at };
     }
     const left = deadline - now();
@@ -358,7 +467,7 @@ async function nextTask(account, slug, waitMs, signal) {
 function submitResult(account, id, body) {
   requireAccount(account);
   const c = q('SELECT c.*, s.owner_id, s.output_schema, s.slug FROM calls c JOIN services s ON s.id = c.service_id WHERE c.id = ?').get(String(id));
-  need(c && c.owner_id === account.id, 404, 'not_found', 'No such call for a service you own');
+  need(c && (c.owner_id === account.id || isWorker(c.service_id, account.id)), 404, 'not_found', 'No such call for a service you work on');
   need(c.status === 'claimed' || c.status === 'pending', 409, 'already_finished', `Call is already ${c.status}`);
   need(body && typeof body === 'object', 422, 'invalid_body', 'Body must be {"output": ...} or {"error": "reason"}');
   if (typeof body.error === 'string' && body.error) {
@@ -431,6 +540,138 @@ function sweep() {
 setInterval(() => probeAll().catch((e) => console.error('probe', e)), PROBE_MS).unref();
 setInterval(() => { try { sweep(); } catch (e) { console.error('sweep', e); } }, 5_000).unref();
 
+// ---------- workers ----------
+const acctByHandle = (h) => { const a = q('SELECT * FROM accounts WHERE handle = ?').get(String(h || '').toLowerCase()); need(a, 404, 'not_found', `No account "${h}"`); return a; };
+function listWorkers(account, slug) {
+  const s = ownSvc(account, slug), t = now();
+  return { workers: q('SELECT a.id, a.handle, w.added_at FROM workers w JOIN accounts a ON a.id = w.account_id WHERE w.service_id = ? ORDER BY w.added_at').all(s.id).map((w) => {
+    const last = presence.get(s.id)?.get(w.id) ?? null;
+    return { handle: w.handle, added_at: w.added_at, last_seen_at: last, online: !!last && t - last < PRESENCE_MS };
+  }) };
+}
+function addWorker(account, slug, body) {
+  const s = ownSvc(account, slug);
+  need(s.mode === 'queue', 409, 'wrong_mode', 'Only queue-mode services have workers');
+  const w = acctByHandle(body?.handle);
+  need(w.id !== s.owner_id, 409, 'already_worker', 'The owner can already work this inbox');
+  need(q('SELECT count(*) n FROM workers WHERE service_id = ?').get(s.id).n < 50, 409, 'too_many', 'At most 50 workers per listing');
+  q('INSERT OR IGNORE INTO workers (service_id, account_id, added_at) VALUES (?,?,?)').run(s.id, w.id, now());
+  return { handle: w.handle };
+}
+function removeWorker(account, slug, handle) {
+  const s = ownSvc(account, slug);
+  const w = acctByHandle(handle);
+  q('DELETE FROM workers WHERE service_id = ? AND account_id = ?').run(s.id, w.id);
+  presence.get(s.id)?.delete(w.id);
+}
+
+// ---------- reports / moderation ----------
+const REASONS = ['spam', 'harmful', 'fraud', 'broken', 'other'];
+function reportService(account, slug, body) {
+  requireAccount(account);
+  limit(`report:${account.id}`, 20, 3600_000);
+  const s = getSvc(slug);
+  need(s.owner_id !== account.id, 403, 'forbidden', 'You cannot report your own listing');
+  need(REASONS.includes(body?.reason), 422, 'invalid_field', `reason must be one of: ${REASONS.join(', ')}`);
+  need(!q('SELECT 1 FROM reports WHERE service_id = ? AND reporter_id = ?').get(s.id, account.id), 409, 'already_reported', 'You already reported this listing');
+  q('INSERT INTO reports (service_id, reporter_id, reason, detail, created_at) VALUES (?,?,?,?,?)').run(s.id, account.id, body.reason, typeof body.detail === 'string' ? body.detail.trim().slice(0, 1000) || null : null, now());
+  // Five independent open reports take a listing down until a moderator looks.
+  if (q(`SELECT count(*) n FROM reports WHERE service_id = ? AND status = 'open'`).get(s.id).n >= 5) q(`UPDATE services SET status = 'suspended' WHERE id = ?`).run(s.id);
+  return { reported: s.slug };
+}
+const requireAdmin = (a) => { need(requireAccount(a).handle === ADMIN, 403, 'forbidden', 'Moderators only'); return a; };
+const admin = {
+  reports: (a) => { requireAdmin(a); return { reports: q(`SELECT r.id, s.slug service, s.name service_name, s.status service_status, a.handle reporter, r.reason, r.detail, r.created_at, r.status
+    FROM reports r JOIN services s ON s.id = r.service_id JOIN accounts a ON a.id = r.reporter_id ORDER BY r.status = 'open' DESC, r.created_at DESC LIMIT 200`).all() }; },
+  resolve: (a, id, body) => {
+    requireAdmin(a);
+    const r = q('SELECT * FROM reports WHERE id = ?').get(Number(id));
+    need(r, 404, 'not_found', 'No such report');
+    need(body?.action === 'dismiss' || body?.action === 'suspend', 422, 'invalid_field', 'action must be "dismiss" or "suspend"');
+    if (body.action === 'suspend') {
+      q(`UPDATE services SET status = 'suspended' WHERE id = ?`).run(r.service_id);
+      q(`UPDATE reports SET status = 'resolved' WHERE service_id = ?`).run(r.service_id);
+    } else q(`UPDATE reports SET status = 'resolved' WHERE id = ?`).run(r.id);
+    return { id: r.id, status: 'resolved' };
+  },
+  setStatus: (a, slug, body) => {
+    requireAdmin(a);
+    const s = getSvc(slug);
+    need(body?.status === 'active' || body?.status === 'suspended', 422, 'invalid_field', 'status must be "active" or "suspended"');
+    q('UPDATE services SET status = ? WHERE id = ?').run(body.status, s.id);
+    return { service: present(svcBySlug.get(s.slug)) };
+  },
+  credit: (a, body) => {
+    requireAdmin(a);
+    const to = acctByHandle(body?.handle), amt = Number(body?.amount_cents);
+    need(Number.isInteger(amt) && amt !== 0 && Math.abs(amt) <= 1_000_000, 422, 'invalid_field', 'amount_cents must be a non-zero integer');
+    move(to.id, amt, 'grant', null, typeof body.note === 'string' ? body.note.slice(0, 200) : null);
+    return { handle: to.handle, balance_cents: q('SELECT balance_cents b FROM accounts WHERE id = ?').get(to.id).b };
+  },
+  payouts: (a) => { requireAdmin(a); return { payouts: q('SELECT p.id, a.handle, p.amount_cents, p.destination, p.status, p.created_at FROM payouts p JOIN accounts a ON a.id = p.account_id ORDER BY p.status = \'requested\' DESC, p.created_at DESC LIMIT 200').all() }; },
+  setPayout: (a, id, body) => {
+    requireAdmin(a);
+    const p = q('SELECT * FROM payouts WHERE id = ?').get(Number(id));
+    need(p, 404, 'not_found', 'No such payout');
+    need(p.status === 'requested', 409, 'already_finished', `Payout is already ${p.status}`);
+    need(body?.status === 'paid' || body?.status === 'rejected', 422, 'invalid_field', 'status must be "paid" or "rejected"');
+    q('UPDATE payouts SET status = ? WHERE id = ?').run(body.status, p.id);
+    if (body.status === 'rejected') move(p.account_id, p.amount_cents, 'refund', null, `payout #${p.id} rejected`);
+    return { id: p.id, status: body.status };
+  },
+};
+
+// ---------- billing ----------
+function billing(account) {
+  const a = requireAccount(account);
+  return {
+    balance_cents: q('SELECT balance_cents b FROM accounts WHERE id = ?').get(a.id).b, payments_enabled: PAYMENTS, fee_percent: FEE_PCT,
+    ledger: q('SELECT at, kind, amount_cents, call_id, note FROM ledger WHERE account_id = ? ORDER BY id DESC LIMIT 200').all(a.id),
+  };
+}
+async function checkout(account, body, base) {
+  const a = requireAccount(account);
+  need(PAYMENTS, 501, 'payments_disabled', 'Card payments are not enabled on this deployment yet');
+  const amt = Number(body?.amount_cents);
+  need(Number.isInteger(amt) && amt >= 500 && amt <= 50_000, 422, 'invalid_field', 'amount_cents must be an integer from 500 to 50000');
+  const form = new URLSearchParams({
+    mode: 'payment', success_url: `${base}/#/billing?paid=1`, cancel_url: `${base}/#/billing`, client_reference_id: String(a.id),
+    'metadata[account_id]': String(a.id), 'line_items[0][quantity]': '1', 'line_items[0][price_data][currency]': 'usd',
+    'line_items[0][price_data][unit_amount]': String(amt), 'line_items[0][price_data][product_data][name]': `${BRAND} balance`,
+  });
+  const r = await fetch('https://api.stripe.com/v1/checkout/sessions', { method: 'POST', headers: { authorization: `Bearer ${STRIPE_KEY}`, 'content-type': 'application/x-www-form-urlencoded' }, body: form, signal: AbortSignal.timeout(15_000) });
+  const j = await r.json().catch(() => ({}));
+  need(r.ok && j.url, 502, 'payment_provider', j.error?.message || 'Could not start checkout');
+  return { url: j.url };
+}
+function stripeWebhook(raw, sigHeader) {
+  need(STRIPE_WH, 501, 'payments_disabled', 'Payments are not enabled');
+  const parts = Object.fromEntries(String(sigHeader || '').split(',').map((kv) => kv.split('=')));
+  const expected = crypto.createHmac('sha256', STRIPE_WH).update(`${parts.t}.${raw || ''}`).digest('hex');
+  const given = Buffer.from(String(parts.v1 || ''), 'utf8'), want = Buffer.from(expected, 'utf8');
+  need(given.length === want.length && crypto.timingSafeEqual(given, want) && Math.abs(now() / 1000 - Number(parts.t)) < 300, 400, 'bad_signature', 'Invalid signature');
+  const ev = JSON.parse(raw.toString('utf8'));
+  if (ev.type !== 'checkout.session.completed' || ev.data?.object?.payment_status !== 'paid') return { received: true };
+  if (q('SELECT 1 FROM stripe_events WHERE id = ?').get(ev.id)) return { received: true };
+  const o = ev.data.object, acct = q('SELECT id FROM accounts WHERE id = ?').get(Number(o.metadata?.account_id));
+  q('INSERT INTO stripe_events (id, at) VALUES (?,?)').run(ev.id, now());
+  if (acct && Number.isInteger(o.amount_total) && o.amount_total > 0) move(acct.id, o.amount_total, 'topup', null, 'card payment');
+  return { received: true };
+}
+function requestPayout(account, body) {
+  const a = requireAccount(account);
+  const amt = Number(body?.amount_cents);
+  need(Number.isInteger(amt) && amt >= 1000, 422, 'invalid_field', 'amount_cents must be an integer of at least 1000');
+  const dest = str(body?.destination, 'destination', 3, 200);
+  const row = q('SELECT balance_cents b, earned_cents e FROM accounts WHERE id = ?').get(a.id);
+  const out = q(`SELECT coalesce(sum(amount_cents), 0) n FROM payouts WHERE account_id = ? AND status != 'rejected'`).get(a.id).n;
+  // Only money earned from completed calls can be withdrawn; added funds can only be spent.
+  need(amt <= row.b && amt <= row.e - out, 422, 'insufficient_funds', `You can withdraw up to ${Math.max(0, Math.min(row.b, row.e - out))} cents of earnings`);
+  move(a.id, -amt, 'payout', null, dest);
+  const id = q('INSERT INTO payouts (account_id, amount_cents, destination, created_at) VALUES (?,?,?,?)').run(a.id, amt, dest, now()).lastInsertRowid;
+  return { id: Number(id), status: 'requested' };
+}
+
 // ---------- uploads (deliverables such as images, audio, video) ----------
 function storeUpload(account, type, buf) {
   requireAccount(account);
@@ -474,27 +715,37 @@ function seed() {
 
 // ---------- http ----------
 const api = {
-  meta: () => ({
-    brand: BRAND, base_url: PUBLIC_URL, mcp_url: `${PUBLIC_URL}/mcp`,
+  meta: (c) => ({
+    brand: c.site.BRAND, base_url: c.site.PUBLIC_URL, mcp_url: `${c.site.PUBLIC_URL}/mcp`, payments_enabled: PAYMENTS, fee_percent: FEE_PCT,
+    storefront: c.site.storefront || c.query.get('storefront') === STOREFRONT.key ? { key: STOREFRONT.key, brand: STOREFRONT.brand, tagline: STOREFRONT.tagline, market_url: PUBLIC_URL, market_brand: BRAND } : null,
     counts: {
       services: q('SELECT count(*) n FROM services').get().n,
       available: q('SELECT * FROM services').all().filter((s) => isAvailable(s)).length,
       calls: q('SELECT count(*) n FROM calls').get().n,
     },
   }),
-  createAccount, listServices, serviceDetail, createService, updateService, callService, getCall, nextTask, submitResult, reviewCall, authenticate,
+  billing, createAccount, listServices, serviceDetail, createService, updateService, callService, getCall, nextTask, submitResult, reviewCall, authenticate,
 };
 const ctx = { BRAND, PUBLIC_URL };
+function siteFor(host) {
+  const h = String(host || '').toLowerCase().replace(/:\d+$/, '');
+  return STOREFRONT.hosts.has(h) ? { BRAND: STOREFRONT.brand, PUBLIC_URL: `https://${h}`, storefront: true } : ctx;
+}
 
 const routes = [
   ['GET', /^\/healthz$/, () => ({ ok: true })],
-  ['GET', /^\/v1\/meta$/, () => api.meta()],
+  ['GET', /^\/v1\/meta$/, (c) => api.meta(c)],
   ['POST', /^\/v1\/accounts$/, (c) => [201, createAccount(c.body, c.ip)]],
   ['GET', /^\/v1\/me$/, (c) => {
     const a = requireAccount(c.account);
-    return { handle: a.handle, services: q('SELECT * FROM services WHERE owner_id = ? ORDER BY created_at DESC').all(a.id).map(present) };
+    const row = q('SELECT balance_cents, earned_cents FROM accounts WHERE id = ?').get(a.id);
+    return {
+      handle: a.handle, ...row, is_admin: a.handle === ADMIN,
+      services: q('SELECT * FROM services WHERE owner_id = ? ORDER BY created_at DESC').all(a.id).map(present),
+      works_for: q('SELECT s.* FROM services s JOIN workers w ON w.service_id = s.id WHERE w.account_id = ? ORDER BY w.added_at DESC').all(a.id).map(present),
+    };
   }],
-  ['GET', /^\/v1\/services$/, (c) => listServices({ q: c.query.get('q'), available: ['1', 'true'].includes(c.query.get('available')), mode: c.query.get('mode'), limit: c.query.get('limit') })],
+  ['GET', /^\/v1\/services$/, (c) => listServices({ q: c.query.get('q'), available: ['1', 'true'].includes(c.query.get('available')), mode: c.query.get('mode'), limit: c.query.get('limit'), media: ['1', 'true'].includes(c.query.get('media')), max_price_cents: c.query.get('max_price_cents') })],
   ['POST', /^\/v1\/services$/, (c) => [201, createService(c.account, c.body)]],
   ['GET', /^\/v1\/services\/([^/]+)$/, (c, slug) => serviceDetail(slug)],
   ['PATCH', /^\/v1\/services\/([^/]+)$/, (c, slug) => updateService(c.account, slug, c.body)],
@@ -507,14 +758,30 @@ const routes = [
   ['GET', /^\/v1\/calls\/([^/]+)$/, (c, id) => getCall(c.account, id, c.query.get('wait_ms') ?? 0, c.signal)],
   ['POST', /^\/v1\/calls\/([^/]+)\/result$/, (c, id) => submitResult(c.account, id, c.body)],
   ['POST', /^\/v1\/calls\/([^/]+)\/review$/, (c, id) => [201, reviewCall(c.account, id, c.body)]],
+  ['GET', /^\/v1\/calls$/, (c) => ({ calls: q(`SELECT c.id call_id, s.slug service, c.status, c.price_cents, c.created_at FROM calls c JOIN services s ON s.id = c.service_id
+    WHERE c.caller_id = ? ORDER BY c.created_at DESC LIMIT 50`).all(requireAccount(c.account).id) })],
+  ['GET', /^\/v1\/services\/([^/]+)\/workers$/, (c, slug) => listWorkers(c.account, slug)],
+  ['POST', /^\/v1\/services\/([^/]+)\/workers$/, (c, slug) => [201, addWorker(c.account, slug, c.body)]],
+  ['DELETE', /^\/v1\/services\/([^/]+)\/workers\/([^/]+)$/, (c, slug, handle) => { removeWorker(c.account, slug, handle); return [204, null]; }],
+  ['POST', /^\/v1\/services\/([^/]+)\/report$/, (c, slug) => [201, reportService(c.account, slug, c.body)]],
+  ['GET', /^\/v1\/billing$/, (c) => billing(c.account)],
+  ['POST', /^\/v1\/billing\/checkout$/, (c) => checkout(c.account, c.body, c.site.PUBLIC_URL)],
+  ['POST', /^\/v1\/billing\/payouts$/, (c) => [201, requestPayout(c.account, c.body)]],
+  ['POST', /^\/v1\/billing\/stripe-webhook$/, (c) => stripeWebhook(c.raw, c.stripeSig)],
+  ['GET', /^\/v1\/admin\/reports$/, (c) => admin.reports(c.account)],
+  ['POST', /^\/v1\/admin\/reports\/(\d+)\/resolve$/, (c, id) => admin.resolve(c.account, id, c.body)],
+  ['POST', /^\/v1\/admin\/services\/([^/]+)\/status$/, (c, slug) => admin.setStatus(c.account, slug, c.body)],
+  ['POST', /^\/v1\/admin\/credit$/, (c) => admin.credit(c.account, c.body)],
+  ['GET', /^\/v1\/admin\/payouts$/, (c) => admin.payouts(c.account)],
+  ['POST', /^\/v1\/admin\/payouts\/(\d+)$/, (c, id) => admin.setPayout(c.account, id, c.body)],
   ['POST', /^\/v1\/uploads$/, (c) => [201, storeUpload(c.account, c.contentType, c.raw)]],
   ['POST', /^\/builtin\/([a-z-]+)$/, async (c, name) => {
     const b = BUILTINS.find((x) => x.path === name);
     need(b, 404, 'not_found', 'No such built-in service');
     try { return await b.run(c.body?.input); } catch (e) { if (e.upstream || e.name === 'TimeoutError') throw new Err(502, 'upstream', e.message); throw e; }
   }],
-  ['POST', /^\/mcp$/, (c) => handleMcp(c.body, c.account, api, ctx, c.signal)],
-  ['GET', /^\/openapi\.json$/, () => openapi(ctx)],
+  ['POST', /^\/mcp$/, (c) => handleMcp(c.body, c.account, api, c.site, c.signal)],
+  ['GET', /^\/openapi\.json$/, (c) => openapi(c.site)],
 ];
 
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.txt': 'text/plain; charset=utf-8', '.ico': 'image/x-icon', '.png': 'image/png' };
@@ -522,13 +789,13 @@ const SEC = {
   'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer', 'x-frame-options': 'DENY',
   'content-security-policy': "default-src 'self'; img-src 'self' https: http: data:; media-src 'self' https: http:; style-src 'self' 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'",
 };
-function serveStatic(res, pathname) {
+function serveStatic(res, pathname, brand) {
   const rel = pathname === '/' ? 'index.html' : pathname.slice(1);
   const file = path.join(DIR, 'public', path.normalize(rel));
   if (!file.startsWith(path.join(DIR, 'public') + path.sep) || !fs.existsSync(file) || !fs.statSync(file).isFile()) return false;
   let data = fs.readFileSync(file);
   const ext = path.extname(file);
-  if (ext === '.html') data = Buffer.from(data.toString('utf8').replaceAll('{{BRAND}}', BRAND.replace(/[<>&"]/g, '')));
+  if (ext === '.html') data = Buffer.from(data.toString('utf8').replaceAll('{{BRAND}}', brand.replace(/[<>&"]/g, '')));
   res.writeHead(200, { 'content-type': MIME[ext] || 'application/octet-stream', 'cache-control': 'no-cache', ...SEC });
   res.end(data);
   return true;
@@ -561,12 +828,12 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'OPTIONS') return send(204, null);
     if (req.method === 'GET' && url.pathname === '/llms.txt') {
       res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'access-control-allow-origin': '*' });
-      return res.end(llmsTxt(ctx));
+      return res.end(llmsTxt(siteFor(req.headers.host)));
     }
     const route = routes.find(([m, re]) => m === req.method && re.test(url.pathname));
     if (!route) {
       if (req.method === 'GET' && url.pathname.startsWith('/files/') && serveFile(res, url.pathname.slice(7))) return;
-      if (req.method === 'GET' && serveStatic(res, url.pathname)) return;
+      if (req.method === 'GET' && serveStatic(res, url.pathname, siteFor(req.headers.host).BRAND)) return;
       if (url.pathname === '/mcp') return send(405, { error: { code: 'method_not_allowed', message: 'POST JSON-RPC to /mcp' } }, { allow: 'POST' });
       throw new Err(404, 'not_found', `No route ${req.method} ${url.pathname}. See /llms.txt or /openapi.json`);
     }
@@ -575,9 +842,10 @@ const server = http.createServer(async (req, res) => {
     const bearer = /^Bearer\s+(.+)$/i.exec(req.headers.authorization || '')?.[1];
     const ac = new AbortController();
     res.on('close', () => { if (!res.writableEnded) ac.abort(); });
-    const isUpload = url.pathname === '/v1/uploads';
-    const c = { ip, query: url.searchParams, account: authenticate(bearer), signal: ac.signal, contentType: req.headers['content-type'] };
+    const isUpload = url.pathname === '/v1/uploads', isHook = url.pathname === '/v1/billing/stripe-webhook';
+    const c = { ip, query: url.searchParams, account: authenticate(bearer), signal: ac.signal, contentType: req.headers['content-type'], site: siteFor(req.headers.host), stripeSig: req.headers['stripe-signature'] };
     if (isUpload) { requireAccount(c.account); c.raw = await readBody(req, true); }
+    else if (isHook) c.raw = await readBody(req, true);
     else if (['POST', 'PATCH'].includes(req.method)) c.body = await readBody(req);
     const out = await route[2](c, ...route[1].exec(url.pathname).slice(1).map(decodeURIComponent));
     if (Array.isArray(out)) send(out[0], out[1]); else send(200, out);
