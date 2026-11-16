@@ -650,7 +650,8 @@
         const lat = num(c.latency_ms) != null ? c.latency_ms : elapsed;
         line.textContent = (c.status || 'unknown') + ' · ' + fmtMs(lat) + (c.call_id ? ' · call ' + c.call_id : '');
         if (c.status === 'done') {
-          add(out, h('h3', null, 'Output'), codeBlock(pretty(c.output), 'Output'));
+          add(out, h('h3', null, 'Output'), h('div', { class: 'inputview' }, renderValue('output', c.output, 0, s.output_schema)),
+            h('details', null, h('summary', { class: 'small' }, 'Raw JSON'), codeBlock(pretty(c.output), 'Output')));
         } else {
           const er = c.error;
           const msg = isObj(er) ? (er.message || er.code || pretty(er)) : er ? String(er) : c.status === 'timeout' ? 'No answer before the timeout.' : 'The call did not complete.';
@@ -712,6 +713,7 @@
       input_schema: { type: 'object', properties: { image_url: { type: 'string', format: 'uri', description: 'Publicly reachable http(s) image URL' } }, required: ['image_url'], additionalProperties: false },
       output_schema: { type: 'object', properties: { rating: { type: 'integer', minimum: 1, maximum: 10, description: '1 = poor, 10 = excellent' } }, required: ['rating'], additionalProperties: false },
       example_input: { image_url: 'https://upload.wikimedia.org/wikipedia/commons/a/a9/Example.jpg' },
+      timeout_ms: 3600000,
     },
     wiki: {
       label: 'Wikipedia article titles (webhook)',
@@ -723,7 +725,45 @@
       output_schema: { type: 'object', properties: { titles: { type: 'array', items: { type: 'string' }, maxItems: 10 } }, required: ['titles'], additionalProperties: false },
       example_input: { query: 'history of the transistor', limit: 5 },
     },
+    artwork: {
+      label: 'Human-made artwork (queue, 7 d)',
+      name: 'Commissioned artwork',
+      description: 'An artist creates an original image from your brief and returns a link to the finished file, optionally with a short note. Allow up to 7 days.',
+      tags: 'art, illustration, image, human',
+      mode: 'queue',
+      input_schema: { type: 'object', properties: {
+        brief: { type: 'string', minLength: 1, maxLength: 4000, description: 'What to depict, format, intended use' },
+        style: { type: 'string', maxLength: 500, description: 'Style or medium, e.g. "flat vector", "watercolor"' },
+        reference_url: { type: 'string', format: 'uri', description: 'Optional reference image' },
+      }, required: ['brief'], additionalProperties: false },
+      output_schema: { type: 'object', properties: {
+        image_url: { type: 'string', format: 'uri', contentMediaType: 'image/*', description: 'The finished artwork' },
+        artist_note: { type: 'string', maxLength: 2000 },
+      }, required: ['image_url'], additionalProperties: false },
+      example_input: { brief: 'A lighthouse at dusk for a book cover, portrait orientation', style: 'gouache' },
+      timeout_ms: 7 * 86400000,
+    },
+    music: {
+      label: 'Human-written music (queue, 7 d)',
+      name: 'Original music track',
+      description: 'A musician writes and records an original piece from your brief and returns a link to the audio file. Allow up to 7 days.',
+      tags: 'music, audio, composition, human',
+      mode: 'queue',
+      input_schema: { type: 'object', properties: {
+        brief: { type: 'string', minLength: 1, maxLength: 4000, description: 'What the piece is for and how it should feel' },
+        duration_seconds: { type: 'integer', minimum: 5, maximum: 600 },
+        mood: { type: 'string', maxLength: 200 },
+      }, required: ['brief'], additionalProperties: false },
+      output_schema: { type: 'object', properties: {
+        audio_url: { type: 'string', format: 'uri', contentMediaType: 'audio/*', description: 'The finished track' },
+        title: { type: 'string', maxLength: 200 },
+      }, required: ['audio_url'], additionalProperties: false },
+      example_input: { brief: 'Intro sting for a technical podcast', duration_seconds: 15, mood: 'calm, curious' },
+      timeout_ms: 7 * 86400000,
+    },
   };
+
+  const QUEUE_TIMEOUTS = [[600000, '10 minutes'], [3600000, '1 hour'], [86400000, '24 hours'], [7 * 86400000, '7 days'], [30 * 86400000, '30 days']];
 
   function jsonField(id, label, rows, opts = {}) {
     const ta = h('textarea', { id, rows, spellcheck: 'false', 'aria-describedby': id + '-hint' });
@@ -768,6 +808,7 @@
       endpoint: h('input', { type: 'url', id: 'p-endpoint', placeholder: 'https://example.com/hooks/my-service' }),
       health: h('input', { type: 'url', id: 'p-health', placeholder: 'https://example.com/health' }),
       timeout: h('input', { type: 'number', id: 'p-timeout', min: 100, step: 100, placeholder: 'server default' }),
+      allowed: h('select', { id: 'p-allowed' }, QUEUE_TIMEOUTS.map(([ms, label]) => h('option', { value: String(ms) }, label))),
     };
     const inS = jsonField('p-in', 'input_schema', 9, { required: true, schema: true });
     const outS = jsonField('p-out', 'output_schema', 9, { required: true, schema: true });
@@ -780,15 +821,26 @@
         h('div', { class: 'hint' }, 'Receives each call as an HTTPS POST; responds with the output JSON.')),
       h('div', { class: 'field' }, h('label', { for: 'p-health' }, 'health_url (optional)'), f.health,
         h('div', { class: 'hint' }, 'Polled with GET for uptime and availability; any 2xx counts as up.')));
+    f.allowed.value = '3600000';
+    const timeoutWebhook = h('div', { class: 'field' }, h('label', { for: 'p-timeout' }, 'timeout_ms (optional)'), f.timeout,
+      h('div', { class: 'hint' }, 'How long your endpoint may take before the call fails with status "timeout".'));
+    const timeoutQueue = h('div', { class: 'field' }, h('label', { for: 'p-allowed' }, 'Time allowed per task'), f.allowed,
+      h('div', { class: 'hint' }, 'How long a queued task may wait for an answer before it times out. Long values suit slow work such as commissions.'));
     const err = h('div');
     const submit = h('button', { type: 'submit', class: 'btn btn-primary btn-big' }, 'Publish service');
     const mode = () => { const r = form.querySelector('input[name="p-mode"]:checked'); return r ? r.value : 'webhook'; };
-    const syncMode = () => { webhookBox.hidden = mode() !== 'webhook'; f.endpoint.required = mode() === 'webhook'; };
+    const syncMode = () => {
+      const wh = mode() === 'webhook';
+      webhookBox.hidden = !wh; f.endpoint.required = wh;
+      timeoutWebhook.hidden = !wh; timeoutQueue.hidden = wh;
+    };
 
     function applyTemplate(t) {
       f.name.value = t.name; f.description.value = t.description; f.tags.value = t.tags;
       form.querySelectorAll('input[name="p-mode"]').forEach((r) => { r.checked = r.value === t.mode; });
       inS.set(t.input_schema); outS.set(t.output_schema); ex.set(t.example_input);
+      if (t.mode === 'queue' && t.timeout_ms) f.allowed.value = String(t.timeout_ms);
+      if (t.mode === 'webhook') f.timeout.value = t.timeout_ms ? String(t.timeout_ms) : '';
       syncMode();
       (t.mode === 'webhook' ? f.endpoint : f.name).focus();
     }
@@ -806,8 +858,9 @@
       webhookBox,
       h('div', { class: 'grid2' }, inS.el, outS.el),
       h('div', { class: 'grid2' }, ex.el,
-        h('div', { class: 'field' }, h('label', { for: 'p-timeout' }, 'timeout_ms (optional)'), f.timeout,
-          h('div', { class: 'hint' }, 'How long a call may take before it fails with status "timeout".'))),
+        h('div', null,
+          timeoutWebhook,
+          timeoutQueue)),
       h('div', { class: 'row' }, submit),
       err);
     form.addEventListener('change', (e) => { if (e.target && e.target.name === 'p-mode') syncMode(); });
@@ -840,7 +893,7 @@
       };
       if (c.value !== undefined) body.example_input = c.value;
       if (m === 'webhook') { body.endpoint_url = endpoint; if (health) body.health_url = health; }
-      const to = parseInt(f.timeout.value, 10);
+      const to = parseInt(m === 'queue' ? f.allowed.value : f.timeout.value, 10);
       if (isFinite(to) && to > 0) body.timeout_ms = to;
       submit.disabled = true;
       try {
@@ -913,8 +966,9 @@
   }
   function mediaEl(kind, href, key) {
     if (kind === 'image') return h('img', { src: href, alt: 'Image from field ' + key, referrerpolicy: 'no-referrer', loading: 'lazy', decoding: 'async' });
-    if (kind === 'audio') return h('audio', { src: href, controls: true, preload: 'metadata', referrerpolicy: 'no-referrer' });
-    if (kind === 'video') return h('video', { src: href, controls: true, preload: 'metadata', referrerpolicy: 'no-referrer' });
+    // <audio>/<video> have no referrerpolicy attribute; index.html sets a page-wide no-referrer policy.
+    if (kind === 'audio') return h('audio', { src: href, controls: true, preload: 'metadata' });
+    if (kind === 'video') return h('video', { src: href, controls: true, preload: 'metadata', playsinline: true });
     return null;
   }
 
@@ -987,6 +1041,7 @@
     const t = typeOf(p) || 'any';
     const lo = num(p.minimum), hi = num(p.maximum);
     if (lo != null || hi != null) return t + ' ' + (lo != null ? lo : '') + '..' + (hi != null ? hi : '');
+    if (t === 'string' && p.contentMediaType) return 'file URL (' + p.contentMediaType + ')';
     if (t === 'string' && p.format) return 'string (' + p.format + ')';
     if (t === 'array') return 'string[]' + (num(p.minItems) != null || num(p.maxItems) != null ? ' ' + (p.minItems || 0) + '..' + (p.maxItems != null ? p.maxItems : '') : '');
     return t;
@@ -1032,7 +1087,7 @@
     return { el: row, keys, select, get: () => (selected === undefined ? undefined : values[selected]), focus: () => (btns[0] && btns[0].focus()) };
   }
 
-  function buildField(name, p, required) {
+  function buildField(name, p, required, signal) {
     const id = 'af-' + (++uid);
     const t = typeOf(p);
     const label = h('label', { id: id + '-l', for: id }, h('span', { class: 'fname mono' }, name), required ? h('span', { class: 'req', title: 'required' }, ' *') : null,
@@ -1119,9 +1174,9 @@
       };
     } else if (t === 'string') {
       const long = num(p.maxLength) == null || p.maxLength > 200;
-      const inp = long && p.format !== 'uri'
+      const inp = long
         ? h('textarea', { id, rows: 3, class: 'prose', maxlength: num(p.maxLength) })
-        : h('input', { type: p.format === 'uri' ? 'url' : 'text', id, maxlength: num(p.maxLength), autocomplete: 'off' });
+        : h('input', { type: 'text', id, maxlength: num(p.maxLength), autocomplete: 'off' });
       wrap.appendChild(inp); focus = () => inp.focus();
       if (p.pattern) wrap.appendChild(h('div', { class: 'hint mono' }, 'pattern: ' + String(p.pattern)));
       read = () => {
@@ -1144,10 +1199,10 @@
   }
 
   // Returns {el, read() -> {ok, value} | {ok:false, errors}, focus(), keys, choice}
-  function buildAnswerForm(schema) {
+  function buildAnswerForm(schema, signal) {
     if (isFlat(schema)) {
       const req = Array.isArray(schema.required) ? schema.required : [];
-      const fields = Object.keys(schema.properties).map((k) => buildField(k, schema.properties[k], req.includes(k)));
+      const fields = Object.keys(schema.properties).map((k) => buildField(k, schema.properties[k], req.includes(k), signal));
       const withKeys = fields.find((f) => f.keys && Object.keys(f.keys).length);
       return {
         el: h('div', null, fields.map((f) => f.el)),
@@ -1283,7 +1338,8 @@
         let on = false;
         flashT = setInterval(() => { on = !on; document.title = on ? '(1) New task' : baseTitle; }, 1000);
       }
-      const form = buildAnswerForm(s.output_schema);
+      const outSchema = isObj(t.output_schema) ? t.output_schema : s.output_schema;
+      const form = buildAnswerForm(outSchema, ctx.signal);
       const cd = h('span', { class: 'countdown' });
       const err = h('div');
       const submit = h('button', { type: 'submit', class: 'btn btn-primary btn-big' }, 'Submit');
@@ -1317,7 +1373,7 @@
       }
 
       const answerForm = h('form', { class: 'answer', novalidate: true }, h('h2', null, 'Your answer'),
-        h('p', { class: 'muted small' }, h('code', { class: 'io' }, s.output_summary || 'output')),
+        h('p', { class: 'muted small' }, h('code', { class: 'io' }, s.output_summary || 'output'), ' · time allowed ', fmtMs(s.timeout_ms)),
         form.el,
         form.keyField ? h('p', { class: 'hint' }, 'Number keys select ' + form.keyField.name + '.') : null,
         err,
@@ -1359,7 +1415,7 @@
         h('div', { class: 'task-head' }, h('h2', { id: 'task-h', style: 'margin:0' }, 'Task'), cd,
           h('span', { class: 'muted small mono' }, 'call ' + t.call_id + ' · received ' + fmtAgo(t.created_at))),
         h('div', { class: 'grid2' },
-          h('div', { class: 'inputview' }, h('h3', null, 'Input'), renderValue('input', t.input, 0)),
+          h('div', { class: 'inputview' }, h('h3', null, 'Input'), renderValue('input', t.input, 0, s.input_schema)),
           answerForm)));
       form.focus();
     }
