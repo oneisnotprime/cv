@@ -421,6 +421,8 @@ function sweep() {
   }
   // A worker that claimed a task and vanished gives it back after 5 minutes.
   q(`UPDATE calls SET status = 'pending', claimed_at = NULL WHERE status = 'claimed' AND claimed_at < ?`).run(t - 300_000);
+  // A worker answering a claimed task is not polling, but is still present.
+  q(`UPDATE services SET last_seen_at = ? WHERE mode = 'queue' AND id IN (SELECT service_id FROM calls WHERE status = 'claimed' AND claimed_at > ?)`).run(t, t - 300_000);
   // Webhook calls orphaned by a restart.
   for (const c of q(`SELECT id, service_id FROM calls WHERE status = 'running' AND created_at < ?`).all(t - 180_000)) {
     finishCall(c.id, c.service_id, 'failed', { error: 'interrupted' });

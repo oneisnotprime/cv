@@ -24,10 +24,10 @@
     add(el, kids);
     return el;
   }
-  function add(el, kids) {
+  function add(el, ...kids) {
     for (const c of kids) {
       if (c == null || c === false) continue;
-      if (Array.isArray(c)) add(el, c);
+      if (Array.isArray(c)) add(el, ...c);
       else el.appendChild(c instanceof Node ? c : document.createTextNode(String(c)));
     }
     return el;
@@ -52,7 +52,8 @@
   const pretty = (v) => { try { return JSON.stringify(v, null, 2); } catch { return String(v); } };
   const num = (v) => (typeof v === 'number' && isFinite(v) ? v : null);
 
-  function fmtMs(ms) {
+  function fmtMs(ms) { const r = fmtMs0(ms); return r.replace(/\.0 /, ' '); }
+  function fmtMs0(ms) {
     ms = num(ms);
     if (ms == null) return '—';
     if (ms < 1000) return Math.round(ms) + ' ms';
@@ -350,7 +351,7 @@
         h('dl', { class: 'kv' },
           h('dt', null, 'MCP server'), h('dd', null, mcp ? [h('code', null, String(mcp)), ' ', copyBtn(String(mcp))] : h('span', { class: 'muted' }, '—')),
           h('dt', null, 'Docs'), h('dd', null, h('a', { class: 'mono', href: '/llms.txt' }, '/llms.txt'), ' · ', h('a', { class: 'mono', href: '/openapi.json' }, '/openapi.json'))),
-        h('details', { open: true }, h('summary', null, 'Quick start (curl)'), codeBlock(quickStart(), 'Quick start')));
+        h('details', { open: window.innerWidth > 860 }, h('summary', null, 'Quick start (curl)'), codeBlock(quickStart(), 'Quick start')));
     }
 
     const qIn = h('input', { type: 'search', id: 'dir-q', placeholder: 'name, description, tag…', autocomplete: 'off', value: dirState.q });
