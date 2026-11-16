@@ -40,7 +40,7 @@ try {
   await t('meta + seed', async () => {
     const m = await call('GET', '/v1/meta');
     assert.equal(m.json.brand, 'TestBrand');
-    assert.equal(m.json.counts.services, 2);
+    assert.equal(m.json.counts.services, 3);
   });
   await t('accounts', async () => {
     provider = (await call('POST', '/v1/accounts', { handle: 'provider' })).json.api_key;
@@ -159,6 +159,19 @@ try {
     assert.equal((await call('GET', '/openapi.json')).json.openapi, '3.1.0');
     assert.equal((await fetch(BASE + '/../server.js')).status, 404);
     assert.equal((await fetch(BASE + '/%2e%2e/server.js')).status, 404);
+  });
+  await t('uploads', async () => {
+    const up = (type, body, key) => fetch(BASE + '/v1/uploads', { method: 'POST', headers: { 'content-type': type, ...(key ? { authorization: `Bearer ${key}` } : {}) }, body });
+    assert.equal((await up('image/png', 'x')).status, 401);
+    assert.equal((await up('text/html', '<script>', provider)).status, 415);
+    const r = await up('image/png', Buffer.from([137, 80, 78, 71]), provider);
+    assert.equal(r.status, 201);
+    const { url, bytes } = await r.json();
+    assert.equal(bytes, 4);
+    const f = await fetch(url);
+    assert.equal(f.headers.get('content-type'), 'image/png');
+    assert.equal((await f.arrayBuffer()).byteLength, 4);
+    assert.equal((await fetch(BASE + '/files/..%2ftest.db')).status, 404);
   });
   await t('delete', async () => {
     assert.equal((await call('DELETE', '/v1/services/uppercase-text', null, provider)).status, 204);

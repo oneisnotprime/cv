@@ -10,6 +10,7 @@ import { validate, checkSchema, summarize } from './lib/schema.js';
 import { safeRequest, checkUrl } from './lib/net.js';
 import { handleMcp } from './lib/mcp.js';
 import { openapi, llmsTxt } from './lib/docs.js';
+import { BUILTINS, HOUSE_QUEUES } from './lib/builtin.js';
 
 const DIR = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 8080);
@@ -19,6 +20,17 @@ const DB_PATH = process.env.DB_PATH || path.join(DIR, 'data.db');
 const PROBE_MS = Number(process.env.PROBE_MS || 60_000);
 const PRESENCE_MS = 30_000; // a queue service is "available" if a worker polled this recently
 const WEEK = 7 * 864e5;
+const FILES_DIR = process.env.FILES_DIR || path.join(path.dirname(DB_PATH), 'files');
+const MAX_UPLOAD = 25 * 1024 * 1024;
+const MAX_STORE = Number(process.env.MAX_STORE_MB || 700) * 1024 * 1024;
+// Deliverable types workers may upload. No HTML/SVG: nothing served from /files can run script.
+const UPLOAD_TYPES = {
+  'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp': 'webp',
+  'audio/mpeg': 'mp3', 'audio/wav': 'wav', 'audio/x-wav': 'wav', 'audio/ogg': 'ogg', 'audio/flac': 'flac', 'audio/mp4': 'm4a', 'audio/midi': 'mid',
+  'video/mp4': 'mp4', 'video/webm': 'webm', 'video/quicktime': 'mov', 'application/pdf': 'pdf', 'text/plain': 'txt',
+};
+const EXT_TYPES = Object.fromEntries(Object.entries(UPLOAD_TYPES).map(([t, e]) => [e, t]).reverse());
+fs.mkdirSync(FILES_DIR, { recursive: true });
 
 // ---------- storage ----------
 const db = new DatabaseSync(DB_PATH);
@@ -196,7 +208,7 @@ function createService(account, body) {
     need(!errs.length, 422, 'invalid_example', 'example_input does not match input_schema', errs);
   }
   const { endpoint_url, health_url } = endpointFields(body, mode);
-  const timeout_ms = mode === 'webhook' ? clamp(body.timeout_ms, 1000, 120_000, 30_000) : clamp(body.timeout_ms, 10_000, 864e5, 600_000);
+  const timeout_ms = mode === 'webhook' ? clamp(body.timeout_ms, 1000, 120_000, 30_000) : clamp(body.timeout_ms, 10_000, 30 * 864e5, 600_000);
   const base = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 48) || 'service';
   let slug = base;
   while (svcBySlug.get(slug)) slug = `${base}-${rand(2)}`;
@@ -417,37 +429,45 @@ function sweep() {
 setInterval(() => probeAll().catch((e) => console.error('probe', e)), PROBE_MS).unref();
 setInterval(() => { try { sweep(); } catch (e) { console.error('sweep', e); } }, 5_000).unref();
 
-// ---------- first-party service + seed ----------
-async function wikipediaTitles(input) {
-  const n = clamp(input?.limit, 1, 10, 5);
-  const u = `https://en.wikipedia.org/w/api.php?action=query&list=search&format=json&srlimit=${n}&srsearch=${encodeURIComponent(String(input?.query || ''))}`;
-  const r = await fetch(u, { headers: { 'user-agent': 'service-market/1 (first-party wikipedia-titles service)' }, signal: AbortSignal.timeout(10_000) });
-  if (!r.ok) throw new Err(502, 'upstream', `Wikipedia returned ${r.status}`);
-  const j = await r.json();
-  return { titles: (j.query?.search || []).map((x) => x.title) };
+// ---------- uploads (deliverables such as images, audio, video) ----------
+function storeUpload(account, type, buf) {
+  requireAccount(account);
+  limit(`up:${account.id}`, 60, 3600_000);
+  const ext = UPLOAD_TYPES[String(type || '').split(';')[0].trim().toLowerCase()];
+  need(ext, 415, 'unsupported_type', `Content-Type must be one of: ${Object.keys(UPLOAD_TYPES).join(', ')}`);
+  need(buf && buf.length, 422, 'invalid_body', 'Send the raw file bytes as the request body');
+  const used = fs.readdirSync(FILES_DIR).reduce((n, f) => n + fs.statSync(path.join(FILES_DIR, f)).size, 0);
+  need(used + buf.length <= MAX_STORE, 507, 'storage_full', 'File storage is full; host the file elsewhere and return its URL');
+  const name = `${rand(16)}.${ext}`;
+  fs.writeFileSync(path.join(FILES_DIR, name), buf);
+  return { url: `${PUBLIC_URL}/files/${name}`, content_type: EXT_TYPES[ext], bytes: buf.length };
 }
+function serveFile(res, name) {
+  const file = path.join(FILES_DIR, name);
+  if (!/^[a-f0-9]{32}\.[a-z0-9]+$/.test(name) || !fs.existsSync(file)) return false;
+  res.writeHead(200, {
+    'content-type': EXT_TYPES[name.split('.').pop()] || 'application/octet-stream', 'content-length': fs.statSync(file).size,
+    'cache-control': 'public, max-age=31536000, immutable', 'x-content-type-options': 'nosniff',
+    'content-security-policy': "default-src 'none'; sandbox", 'access-control-allow-origin': '*',
+  });
+  fs.createReadStream(file).pipe(res);
+  return true;
+}
+
+// ---------- first-party services + seed ----------
 function seed() {
-  if (q('SELECT 1 FROM accounts LIMIT 1').get()) return;
-  const key = process.env.HOUSE_KEY || `mk_${rand(24)}`;
-  q('INSERT INTO accounts (handle, key_hash, created_at) VALUES (?,?,?)').run('house', sha(key), now());
-  const house = authenticate(key);
-  if (!process.env.HOUSE_KEY) console.log(`house account key (shown once): ${key}`);
-  createService(house, {
-    name: 'Wikipedia article titles', mode: 'webhook', tags: ['wikipedia', 'search', 'lookup'],
-    description: 'Returns the titles of the English Wikipedia articles most relevant to a free-text query, best match first. Automated; typically answers in under a second.',
-    endpoint_url: `${PUBLIC_URL}/builtin/wikipedia-titles`, health_url: `${PUBLIC_URL}/healthz`,
-    input_schema: { type: 'object', required: ['query'], additionalProperties: false, properties: { query: { type: 'string', minLength: 1, maxLength: 300, description: 'What to look up' }, limit: { type: 'integer', minimum: 1, maximum: 10, description: 'How many titles (default 5)' } } },
-    output_schema: { type: 'object', required: ['titles'], properties: { titles: { type: 'array', items: { type: 'string' } } } },
-    example_input: { query: 'history of the transistor', limit: 3 },
-  });
-  createService(house, {
-    name: 'Rate an image 1-10', mode: 'queue', tags: ['human', 'image', 'rating', 'judgment'],
-    description: 'A person looks at the image at the given URL and rates its overall visual quality from 1 (poor) to 10 (excellent). Answered by a human, so it is only available while a rater is online.',
-    input_schema: { type: 'object', required: ['image_url'], additionalProperties: false, properties: { image_url: { type: 'string', format: 'uri', description: 'Publicly reachable image URL' } } },
-    output_schema: { type: 'object', required: ['rating'], additionalProperties: false, properties: { rating: { type: 'integer', minimum: 1, maximum: 10 } } },
-    example_input: { image_url: 'https://upload.wikimedia.org/wikipedia/commons/thumb/4/47/PNG_transparency_demonstration_1.png/280px-PNG_transparency_demonstration_1.png' },
-    timeout_ms: 600_000,
-  });
+  let house = q('SELECT * FROM accounts WHERE handle = ?').get('house');
+  if (!house) {
+    const key = process.env.HOUSE_KEY || `mk_${rand(24)}`;
+    q('INSERT INTO accounts (handle, key_hash, created_at) VALUES (?,?,?)').run('house', sha(key), now());
+    house = authenticate(key);
+    if (!process.env.HOUSE_KEY) console.log(`house account key (shown once): ${key}`);
+  }
+  const have = new Set(q('SELECT name FROM services WHERE owner_id = ?').all(house.id).map((s) => s.name));
+  for (const b of BUILTINS) {
+    if (!have.has(b.listing.name)) createService(house, { ...b.listing, endpoint_url: `${PUBLIC_URL}/builtin/${b.path}`, health_url: `${PUBLIC_URL}/healthz` });
+  }
+  for (const l of HOUSE_QUEUES) if (!have.has(l.name)) createService(house, l);
 }
 
 // ---------- http ----------
@@ -485,7 +505,12 @@ const routes = [
   ['GET', /^\/v1\/calls\/([^/]+)$/, (c, id) => getCall(c.account, id, c.query.get('wait_ms') ?? 0, c.signal)],
   ['POST', /^\/v1\/calls\/([^/]+)\/result$/, (c, id) => submitResult(c.account, id, c.body)],
   ['POST', /^\/v1\/calls\/([^/]+)\/review$/, (c, id) => [201, reviewCall(c.account, id, c.body)]],
-  ['POST', /^\/builtin\/wikipedia-titles$/, (c) => wikipediaTitles(c.body?.input)],
+  ['POST', /^\/v1\/uploads$/, (c) => [201, storeUpload(c.account, c.contentType, c.raw)]],
+  ['POST', /^\/builtin\/([a-z-]+)$/, async (c, name) => {
+    const b = BUILTINS.find((x) => x.path === name);
+    need(b, 404, 'not_found', 'No such built-in service');
+    try { return await b.run(c.body?.input); } catch (e) { if (e.upstream || e.name === 'TimeoutError') throw new Err(502, 'upstream', e.message); throw e; }
+  }],
   ['POST', /^\/mcp$/, (c) => handleMcp(c.body, c.account, api, ctx, c.signal)],
   ['GET', /^\/openapi\.json$/, () => openapi(ctx)],
 ];
@@ -493,7 +518,7 @@ const routes = [
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.txt': 'text/plain; charset=utf-8', '.ico': 'image/x-icon', '.png': 'image/png' };
 const SEC = {
   'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer', 'x-frame-options': 'DENY',
-  'content-security-policy': "default-src 'self'; img-src 'self' https: http: data:; style-src 'self' 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'",
+  'content-security-policy': "default-src 'self'; img-src 'self' https: http: data:; media-src 'self' https: http:; style-src 'self' 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'",
 };
 function serveStatic(res, pathname) {
   const rel = pathname === '/' ? 'index.html' : pathname.slice(1);
@@ -507,13 +532,14 @@ function serveStatic(res, pathname) {
   return true;
 }
 
-function readBody(req) {
+function readBody(req, raw = false) {
   return new Promise((resolve, reject) => {
     const chunks = [];
     let size = 0;
-    req.on('data', (c) => { size += c.length; if (size > 600_000) { reject(new Err(413, 'too_large', 'Request body too large')); req.destroy(); } else chunks.push(c); });
+    req.on('data', (c) => { size += c.length; if (size > (raw ? MAX_UPLOAD : 600_000)) { reject(new Err(413, 'too_large', 'Request body too large')); req.destroy(); } else chunks.push(c); });
     req.on('end', () => {
       if (!size) return resolve(undefined);
+      if (raw) return resolve(Buffer.concat(chunks));
       try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf8'))); } catch { reject(new Err(400, 'invalid_json', 'Request body is not valid JSON')); }
     });
     req.on('error', reject);
@@ -537,6 +563,7 @@ const server = http.createServer(async (req, res) => {
     }
     const route = routes.find(([m, re]) => m === req.method && re.test(url.pathname));
     if (!route) {
+      if (req.method === 'GET' && url.pathname.startsWith('/files/') && serveFile(res, url.pathname.slice(7))) return;
       if (req.method === 'GET' && serveStatic(res, url.pathname)) return;
       if (url.pathname === '/mcp') return send(405, { error: { code: 'method_not_allowed', message: 'POST JSON-RPC to /mcp' } }, { allow: 'POST' });
       throw new Err(404, 'not_found', `No route ${req.method} ${url.pathname}. See /llms.txt or /openapi.json`);
@@ -546,7 +573,10 @@ const server = http.createServer(async (req, res) => {
     const bearer = /^Bearer\s+(.+)$/i.exec(req.headers.authorization || '')?.[1];
     const ac = new AbortController();
     res.on('close', () => { if (!res.writableEnded) ac.abort(); });
-    const c = { ip, query: url.searchParams, account: authenticate(bearer), signal: ac.signal, body: ['POST', 'PATCH'].includes(req.method) ? await readBody(req) : undefined };
+    const isUpload = url.pathname === '/v1/uploads';
+    const c = { ip, query: url.searchParams, account: authenticate(bearer), signal: ac.signal, contentType: req.headers['content-type'] };
+    if (isUpload) { requireAccount(c.account); c.raw = await readBody(req, true); }
+    else if (['POST', 'PATCH'].includes(req.method)) c.body = await readBody(req);
     const out = await route[2](c, ...route[1].exec(url.pathname).slice(1).map(decodeURIComponent));
     if (Array.isArray(out)) send(out[0], out[1]); else send(200, out);
   } catch (e) {

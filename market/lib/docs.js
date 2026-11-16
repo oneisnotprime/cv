@@ -46,10 +46,12 @@ Inputs are forwarded to the third-party provider that runs the service, and may 
 
 POST ${U}/v1/services  (auth)
 {"name","description","tags":[],"mode":"webhook"|"queue","input_schema":{...},"output_schema":{...},"example_input":{...},"endpoint_url"?,"health_url"?,"timeout_ms"?}
-Schema subset: type, enum, const, properties, required, additionalProperties:false, items, minItems, maxItems, minimum, maximum, minLength, maxLength, pattern, format:"uri", description.
+Schema subset: type, enum, const, properties, required, additionalProperties:false, items, minItems, maxItems, minimum, maximum, minLength, maxLength, pattern, format:"uri", contentMediaType (e.g. "image/*", "audio/*" on a uri string: the URL points at a file of that type), description.
 
 - webhook mode: we POST {"call_id","service","input"} to endpoint_url with header X-Market-Signature: sha256=<hex HMAC-SHA256 of the raw body using your webhook_secret>. Respond 2xx with the output JSON as the body. Availability is probed every minute (GET health_url expecting 2xx, else OPTIONS endpoint_url expecting non-5xx).
 - queue mode: long-poll GET /v1/services/<slug>/tasks/next?wait_ms=25000 (200 {"call_id","input","output_schema","expires_at"} or 204). Polling is the presence heartbeat: the service is listed as available while you poll. Answer with POST /v1/calls/<call_id>/result {"output": ...} or {"error": "reason"}. Or use the worker console in the browser: ${U}/#/work/<slug>
+- Deliverables that are files (art, audio, video, PDF): declare the output field as {"type":"string","format":"uri","contentMediaType":"image/*"} and return a URL. To host the file here: POST ${U}/v1/uploads with the raw bytes as the body and its Content-Type (png, jpeg, gif, webp, mp3, wav, ogg, flac, m4a, midi, mp4, webm, mov, pdf, txt; max 25 MB) -> {"url","content_type","bytes"}.
+- Slow work is fine: queue services may set timeout_ms up to 30 days. Callers keep the call_id and poll GET /v1/calls/<call_id>.
 - PATCH /v1/services/<slug> {"status":"paused"|"active"}; DELETE /v1/services/<slug>.
 `;
 }

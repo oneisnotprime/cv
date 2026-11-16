@@ -6,7 +6,7 @@ const TYPES = ['string', 'number', 'integer', 'boolean', 'array', 'object', 'nul
 const KEYS = new Set([
   'type', 'enum', 'const', 'properties', 'required', 'additionalProperties', 'items',
   'minItems', 'maxItems', 'minimum', 'maximum', 'minLength', 'maxLength', 'pattern',
-  'format', 'description', 'title', 'default', 'examples',
+  'format', 'contentMediaType', 'description', 'title', 'default', 'examples',
 ]);
 
 function typeOf(v) {
@@ -89,6 +89,7 @@ export function summarize(s, depth = 0) {
     return '{' + Object.entries(s.properties).map(([k, v]) => `${k}${req.has(k) ? '' : '?'}: ${summarize(v, depth + 1)}`).join(', ') + '}';
   }
   if (t === 'array') return `${s.items ? summarize(s.items, depth + 1) : 'any'}[]`;
+  if (t === 'string' && s.contentMediaType) return `${s.contentMediaType} ${s.format === 'uri' ? 'url' : 'string'}`;
   if (t === 'string' && s.format) return s.format;
   if ((t === 'integer' || t === 'number') && (s.minimum !== undefined || s.maximum !== undefined)) return `${t} ${s.minimum ?? ''}..${s.maximum ?? ''}`;
   return t;
