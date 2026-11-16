@@ -226,6 +226,7 @@
    * Shared state: meta + current account
    * ======================================================================= */
   const S = { meta: null, me: null, meErr: null };
+  const memDrafts = {}; // fallback when sessionStorage is unavailable
   const brandEl = document.getElementById('brand');
   const initialBrand = (brandEl.textContent || '').includes('{{') ? '' : brandEl.textContent.trim();
   // Storefront: forced locally with ?storefront=<key> in the page URL; otherwise the server decides by domain.
@@ -335,6 +336,7 @@
     current = ctx;
     updateNav(hash);
     main.replaceChildren();
+    document.querySelectorAll('dialog.lightbox').forEach((d) => d.remove());
     let view = viewNotFound, params = [];
     for (const [re, fn] of routes) {
       const m = hash.match(re);
@@ -383,19 +385,22 @@
     const sf = SF();
     setTitle(T('directory'));
     const counts = h('p', { class: 'counts mono' });
-    const agents = h('section', { class: 'panel agents', 'aria-labelledby': 'agents-h' });
-    const intro = h('div', { class: 'intro' },
-      sf ? h('section', { class: 'panel' },
-        h('h1', null, sf.brand || brand()),
-        sf.tagline ? h('p', { class: 'lede' }, String(sf.tagline)) : null,
-        h('p', null, 'Everything here is made by people, not generated. Each artist sets a price and turnaround; their listing shows typical turnaround, rating from verified buyers, and whether they are taking commissions right now.'),
+    const agents = h('section', { class: 'panel agents', 'aria-label': 'For agents' });
+    const intro = h('div', { class: 'intro' + (sf ? ' intro-sf' : '') },
+      sf ? h('section', { class: 'panel sf-hero' },
+        h('h1', null, sf.tagline ? String(sf.tagline) : (sf.brand || brand())),
+        h('p', { class: 'lede' }, 'Commission digital art, music and video from real people. Everything here is made by a person, not generated.'),
+        h('ol', { class: 'steps' },
+          h('li', null, h('b', null, 'Pick an artist'), h('span', null, 'Look through their samples, price and typical turnaround.')),
+          h('li', null, h('b', null, 'Describe what you want'), h('span', null, 'Write a short brief. Add a reference image if you have one.')),
+          h('li', null, h('b', null, 'Approve the result'), h('span', null, 'Your payment is held until you approve. Ask for changes if they are included.'))),
         counts)
         : h('section', { class: 'panel' },
           h('h1', null, 'Service directory'),
           h('p', { class: 'lede' }, 'Typed data-in/data-out services — answered by a webhook or by people working a task inbox — that AI agents can search and call instead of asking their user.'),
           h('p', { class: 'muted small' }, 'Every listing declares input and output JSON Schemas. Ranking puts services that are available right now first; ratings come only from callers of completed calls.'),
           counts),
-      agents);
+      sf ? null : agents);
 
     let lastItems = [];
     function renderCounts() {
@@ -411,13 +416,14 @@
     }
     function renderAgents() {
       const mcp = S.meta && S.meta.mcp_url;
-      fill(agents,
-        h('h2', { id: 'agents-h' }, 'For agents'),
+      const parts = [
         h('dl', { class: 'kv' },
           h('dt', null, 'MCP server'), h('dd', null, mcp ? [h('code', null, String(mcp)), ' ', copyBtn(String(mcp))] : h('span', { class: 'muted' }, '—')),
           h('dt', null, 'Docs'), h('dd', null, h('a', { class: 'mono', href: '/llms.txt' }, '/llms.txt'), ' · ', h('a', { class: 'mono', href: '/openapi.json' }, '/openapi.json'))),
         sf ? h('p', { class: 'muted small' }, 'Agents can commission work on a user\'s behalf through the same API: search with media=1&mode=queue, call with max_price_cents, and pass callback_url or poll the call until the artist delivers.') : null,
-        h('details', { open: window.innerWidth > 860 }, h('summary', null, 'Quick start (curl)'), codeBlock(quickStart(), 'Quick start')));
+        h('details', { open: !sf && window.innerWidth > 860 }, h('summary', null, 'Quick start (curl)'), codeBlock(quickStart(), 'Quick start'))];
+      if (sf) fill(agents, h('details', null, h('summary', null, h('b', null, 'Using an AI agent?'), ' It can commission here for you.'), h('div', { style: 'margin-top:8px' }, parts)));
+      else fill(agents, h('h2', null, 'For agents'), parts);
     }
 
     const qIn = h('input', { type: 'search', id: 'dir-q', placeholder: 'name, description, tag…', autocomplete: 'off', value: dirState.q });
@@ -444,8 +450,8 @@
     const info = h('span', { 'aria-live': 'polite' });
     const refreshNote = h('span');
     const errSlot = h('div');
-    const list = h('ul', { class: 'svc-list', 'aria-label': T('services') });
-    add(main, intro, controls, chips, h('div', { class: 'listmeta' }, info, refreshNote), errSlot, list);
+    const list = h('ul', { class: sf ? 'cards' : 'svc-list', 'aria-label': T('services') });
+    add(main, intro, controls, chips, h('div', { class: 'listmeta' }, info, refreshNote), errSlot, list, sf ? agents : null);
 
     renderCounts(); renderAgents();
     loadMeta().then(() => { if (!ctx.signal.aborted) { renderCounts(); renderAgents(); } });
@@ -482,7 +488,7 @@
       const focusSlug = active && list.contains(active) && active.dataset ? active.dataset.slug : null;
       const y = window.scrollY;
       const shown = sf && dirState.media ? items.filter((s) => Array.isArray(s.media) && s.media.includes(dirState.media)) : items;
-      list.replaceChildren(...shown.map(svcRow));
+      list.replaceChildren(...shown.map(sf ? artistCard : svcRow));
       if (!shown.length) list.appendChild(emptyState());
       const label = T('services').toLowerCase();
       const txt = shown.length + ' ' + (shown.length === 1 ? T('service') : label);
@@ -590,6 +596,8 @@
       s.description ? h('p', { class: 'desc', style: 'margin-top:8px' }, s.description) : null,
       s.status === 'suspended' ? h('div', { class: 'alert alert-error', role: 'alert' }, h('b', null, 'Suspended by moderators. '), 'This listing cannot be called' + (isOwner(s) ? '. Contact the operators if you think this is a mistake.' : '.')) : null);
 
+    const gal = gallery(s.samples);
+    if (gal) main.appendChild(gal);
     if (isOwner(s)) main.appendChild(ownerBar(ctx, s));
     else if (isWorkerOn(s) && s.mode === 'queue') {
       main.appendChild(h('section', { class: 'panel owner-bar', style: 'margin-top:12px' }, h('div', { class: 'row' },
@@ -607,6 +615,7 @@
       stat('Uptime 7d', fmtPct(st.uptime_7d)),
       s.mode === 'queue' ? stat('Pending', fmtNum(st.pending)) : stat('Last check', fmtAgo(st.last_checked_at)),
       s.mode === 'queue' ? stat('Workers online', fmtNum(st.workers_online)) : null,
+      s.mode === 'queue' ? stat('Changes included', num(s.revisions) != null ? String(s.revisions) : '—') : null,
       stat(s.mode === 'queue' ? 'Time allowed' : 'Timeout', fmtMs(s.timeout_ms))));
 
     const schemaGrid = h('div', { class: 'grid2' },
@@ -643,14 +652,29 @@
     const toggle = h('button', { type: 'button', class: 'btn', disabled: s.status === 'suspended' }, paused ? 'Resume' : 'Pause');
     const priceIn = h('input', { type: 'number', id: 'o-price', min: 0, max: 1000, step: '0.01', inputmode: 'decimal', style: 'width:110px',
       value: ((num(s.price_cents) || 0) / 100).toFixed(2) });
-    const priceBtn = h('button', { type: 'button', class: 'btn btn-sm' }, 'Save price');
+    const priceBtn = h('button', { type: 'button', class: 'btn btn-sm' }, 'Save');
+    const revSel = s.mode === 'queue' ? h('select', { id: 'o-rev', style: 'width:auto' }, [0, 1, 2, 3].map((n) => h('option', { value: String(n) }, String(n)))) : null;
+    if (revSel) revSel.value = String(num(s.revisions) != null ? s.revisions : 1);
+    const sampEd = s.mode === 'queue' ? samplesEditor(s.samples, ctx.signal) : null;
+    const sampBtn = h('button', { type: 'button', class: 'btn btn-sm btn-primary' }, 'Save samples');
+    sampBtn.addEventListener('click', async () => {
+      err.replaceChildren();
+      if (sampEd.busy()) { err.appendChild(errorBox({ message: 'Wait for uploads to finish.' })); return; }
+      sampBtn.disabled = true;
+      try {
+        await api('PATCH', '/v1/services/' + enc(s.slug), { samples: sampEd.get() }, { signal: ctx.signal });
+        route();
+      } catch (e) { if (!isAbort(e)) { err.appendChild(errorBox(e)); sampBtn.disabled = false; } }
+    });
     priceBtn.addEventListener('click', async () => {
       err.replaceChildren();
       const c = dollarsToCents(priceIn.value);
       if (c == null || c > 100000) { err.appendChild(errorBox({ message: 'Price must be between $0 and $1000.' })); return; }
       priceBtn.disabled = true;
       try {
-        await api('PATCH', '/v1/services/' + enc(s.slug), { price_cents: c }, { signal: ctx.signal });
+        const body = { price_cents: c };
+        if (revSel) body.revisions = Number(revSel.value);
+        await api('PATCH', '/v1/services/' + enc(s.slug), body, { signal: ctx.signal });
         route();
       } catch (e) { if (!isAbort(e)) { err.appendChild(errorBox(e)); priceBtn.disabled = false; } }
     });
@@ -677,8 +701,11 @@
         s.mode === 'queue' ? h('a', { class: 'btn btn-primary', href: '#/work/' + enc(s.slug) }, 'Open worker console') : null,
         h('span', { class: 'spacer' }), toggle, del),
       s.mode === 'queue' ? h('p', { class: 'muted small', style: 'margin:6px 0 0' }, 'The service is "available now" only while a worker console is online.') : null,
-      h('div', { class: 'row', style: 'margin-top:8px' }, h('label', { class: 'inline', for: 'o-price' }, 'Price (USD)'), priceIn, priceBtn,
+      h('div', { class: 'row', style: 'margin-top:8px' }, h('label', { class: 'inline', for: 'o-price' }, 'Price (USD)'), priceIn,
+        revSel ? [h('label', { class: 'inline', for: 'o-rev' }, 'Rounds of changes'), revSel] : null, priceBtn,
         h('span', { class: 'muted small' }, '0 = free' + (num(S.meta && S.meta.fee_percent) != null ? '; platform fee ' + S.meta.fee_percent + '%' : ''))),
+      sampEd ? h('details', { style: 'margin-top:8px' }, h('summary', null, 'Edit sample work (' + cleanSamples(s.samples).length + ')'),
+        h('div', { style: 'margin-top:8px' }, sampEd.el, sampBtn)) : null,
       err,
       s.mode === 'queue' ? workersPanel(ctx, s) : null);
   }
@@ -782,16 +809,20 @@
   }
 
   // Output (rendered by media type) or error, plus the review form when eligible.
-  function callResult(ctx, c, schema, onReviewed, canReview) {
+  function callResult(ctx, c, schema, onReviewed, canReview, onCallPage) {
     const box = h('div');
     if (c.status === 'done') {
       add(box, h('h3', null, 'Output'), h('div', { class: 'inputview' }, renderValue('output', c.output, 0, schema)),
         h('details', null, h('summary', { class: 'small' }, 'Raw JSON'), codeBlock(pretty(c.output), 'Output')));
+      if (c.payment === 'held' && c.call_id && !onCallPage) {
+        box.appendChild(h('div', { class: 'alert alert-warn' }, h('b', null, 'Payment is held until you accept. '),
+          h('a', { href: '#/call/' + enc(c.call_id) }, 'Review the delivery'), ' to accept it, request changes or report a problem.'));
+      }
     } else if (FINISHED.includes(c.status)) {
       const er = c.error;
       const msg = isObj(er) ? (er.message || er.code || pretty(er)) : er ? String(er) : c.status === 'timeout' ? 'No answer before the time allowed ran out.' : 'The call did not complete.';
       box.appendChild(errorBox({ message: msg, details: isObj(er) ? er.details : undefined }, c.status === 'timeout' ? 'Timed out' : 'Failed'));
-      if (num(c.price_cents) > 0) box.appendChild(h('p', { class: 'muted small' }, fmtUsd(c.price_cents) + ' was refunded to your balance automatically.'));
+      if (num(c.price_cents) > 0 && !onCallPage) box.appendChild(h('p', { class: 'muted small' }, fmtUsd(c.price_cents) + ' was refunded to your balance automatically.'));
     }
     if (canReview !== false && c.call_id && !c.reviewed && FINISHED.includes(c.status)) box.appendChild(reviewForm(ctx, c.call_id, onReviewed));
     return box;
@@ -834,10 +865,42 @@
       ? (validate() ? { ok: true, value: JSON.parse(ta.value) } : { ok: false, errors: ['input is not valid JSON'] })
       : gen.read());
 
+    // Draft survives sign-up, a trip to Billing, or a reload (sessionStorage; memory if unavailable).
+    const DKEY = 'mk_draft_' + s.slug;
+    const saveDraft = () => {
+      const d = JSON.stringify({ json: useJson, text: ta.value, value: gen.read(true).value });
+      memDrafts[DKEY] = d;
+      try { sessionStorage.setItem(DKEY, d); } catch { /* memory only */ }
+    };
+    const clearDraft = () => { delete memDrafts[DKEY]; try { sessionStorage.removeItem(DKEY); } catch { /* ignore */ } };
+    (() => {
+      let raw = memDrafts[DKEY] || null;
+      try { raw = sessionStorage.getItem(DKEY) || raw; } catch { /* ignore */ }
+      if (!raw) return;
+      try {
+        const d = JSON.parse(raw);
+        if (typeof d.text === 'string') ta.value = d.text;
+        if (gen.flat && isObj(d.value)) gen.set(d.value);
+        if (gen.flat && typeof d.json === 'boolean') { useJson = d.json; syncEditor(); }
+      } catch { /* ignore a bad draft */ }
+    })();
+
     const qOff = s.mode === 'queue' ? h('input', { type: 'checkbox', id: 'try-qoff', checked: sf }) : null;
     const cbIn = s.mode === 'queue' ? h('input', { type: 'url', id: 'try-cb', placeholder: 'https://your.host/hook', autocomplete: 'off' }) : null;
     const confirmCb = price > 0 ? h('input', { type: 'checkbox', id: 'try-confirm' }) : null;
     const btn = h('button', { type: 'submit', class: 'btn btn-primary', disabled: blocked }, T('call'));
+    const authNote = getKey() ? null : h('p', { class: 'muted small' }, 'You need an account to send this. You can create one in a moment without losing what you type.');
+    const confirmText = h('span');
+    const moneyNote = h('div');
+    function renderMoney() {
+      const bal = S.me ? num(S.me.balance_cents) : null;
+      confirmText.textContent = 'Spend ' + fmtUsd(price) + ' from my balance' + (bal != null ? ' (balance ' + fmtUsd(bal) + ')' : '');
+      fill(moneyNote, price > 0 && bal != null && bal < price
+        ? h('div', { class: 'alert alert-warn' }, 'Your balance is ' + fmtUsd(bal) + ' and this costs ' + fmtUsd(price) + '. ',
+          h('a', { href: '#/billing' }, 'Add funds on the Billing page'), ', then come back. What you typed is kept.')
+        : null);
+    }
+    renderMoney();
     const stopBtn = h('button', { type: 'button', class: 'btn', hidden: true }, 'Stop waiting');
     const out = h('div');
     let pollCtrl = null;
@@ -846,22 +909,31 @@
     const form = h('form', { class: 'panel', 'aria-labelledby': 'try-h', novalidate: true },
       h('div', { class: 'row' }, h('h2', { id: 'try-h', style: 'margin:0' }, T('tryIt')), h('span', { class: 'spacer' }),
         h('span', { class: 'price' }, price > 0 ? fmtUsd(price) + (sf ? ' per commission' : ' per call') : 'Free')),
-      getKey() ? null : h('div', { class: 'alert alert-warn' }, (sf ? 'Commissioning' : 'Calling') + ' requires an account. ', h('a', { href: '#/account' }, 'Create one or sign in'), '.'),
+      authNote,
       h('div', { style: 'margin-top:8px' }, formBox, jsonBox, h('p', { class: 'small' }, toggleBtn)),
       qOff ? h('div', { class: 'field' }, h('label', { class: 'inline', for: 'try-qoff' }, qOff,
         sf ? 'Send even if the artist is not online right now (they will see it in their inbox)' : 'Queue the task even if no worker is online')) : null,
       cbIn ? h('details', { class: 'field' }, h('summary', { class: 'small' }, 'Notify a URL when finished (callback_url)'),
         h('label', { for: 'try-cb', class: 'sr-only' }, 'callback_url'), cbIn,
         h('div', { class: 'hint' }, 'Receives a POST of the call object when it finishes. https only.')) : null,
-      confirmCb ? h('div', { class: 'field' }, h('label', { class: 'inline', for: 'try-confirm' }, confirmCb,
-        'Spend ' + fmtUsd(price) + ' from my balance' + (S.me && num(S.me.balance_cents) != null ? ' (balance ' + fmtUsd(S.me.balance_cents) + ')' : '')),
-        h('div', { class: 'hint' }, 'Refunded automatically if the call fails or times out.')) : null,
+      confirmCb ? h('div', { class: 'field' }, h('label', { class: 'inline', for: 'try-confirm' }, confirmCb, confirmText),
+        h('div', { class: 'hint' }, s.mode === 'queue' ? 'Held until you approve the delivery; refunded automatically if it fails or times out.' : 'Refunded automatically if the call fails or times out.'),
+        moneyNote) : null,
       h('div', { class: 'row' }, btn, stopBtn),
       out);
 
     form.addEventListener('submit', (e) => { e.preventDefault(); run().catch(() => {}); });
+    let dT = null;
+    const queueSave = () => { clearTimeout(dT); dT = setTimeout(saveDraft, 300); };
+    ['input', 'change', 'click'].forEach((ev) => form.addEventListener(ev, queueSave));
+    ctx.onLeave(() => { clearTimeout(dT); });
 
     async function run() {
+      if (!getKey()) {
+        saveDraft();
+        fill(out, signupInline(ctx, () => { if (authNote) authNote.remove(); renderMoney(); }));
+        return;
+      }
       const inp = getInput();
       if (!inp.ok) { fill(out, errorBox({ message: 'Incomplete input.', details: inp.errors })); return; }
       if (confirmCb && !confirmCb.checked) { fill(out, errorBox({ message: 'Tick "Spend ' + fmtUsd(price) + ' from my balance" to confirm.' })); confirmCb.focus(); return; }
@@ -883,7 +955,8 @@
         if (cb) body.callback_url = cb;
         const r = await api('POST', '/v1/services/' + enc(s.slug) + '/call', body, { signal: sig, ok: [502] });
         call = isObj(r.data) ? r.data : {};
-        if (price > 0) loadMe(true);
+        if (call.call_id) clearDraft();
+        if (price > 0) loadMe(true).then(() => { if (!ctx.signal.aborted) renderMoney(); });
         if (call.status === 'pending' || call.status === 'claimed') {
           if (call.call_id) out.appendChild(callLink(call.call_id, s));
           stopBtn.hidden = false;
@@ -904,7 +977,11 @@
         }
         line.textContent = '';
         out.appendChild(errorBox(e, e.code === 'service_unavailable' ? 'Unavailable' : e.status === 402 ? 'Payment' : 'Call failed'));
-        if (e.code === 'insufficient_funds') out.appendChild(h('p', null, h('a', { class: 'btn btn-primary', href: '#/billing' }, 'Add funds')));
+        if (e.code === 'insufficient_funds') {
+          saveDraft();
+          loadMe(true).then(() => { if (!ctx.signal.aborted) renderMoney(); });
+          out.appendChild(h('p', null, 'Your balance is too low for this. ', h('a', { class: 'btn btn-primary', href: '#/billing' }, 'Add funds'), ' What you typed is kept.'));
+        }
         if (e.code === 'price_not_accepted') out.appendChild(h('p', { class: 'muted small' }, 'The price may have changed. ', h('button', { type: 'button', class: 'linkbtn', onclick: () => route() }, 'Reload'), ' to see the current price.'));
         if (e.code === 'service_unavailable' && qOff) out.appendChild(h('p', { class: 'muted small' }, 'Nobody is online. Tick the box above to leave it in the inbox.'));
       } finally {
@@ -1099,13 +1176,20 @@
       h('div', { class: 'hint' }, 'How long your endpoint may take before the call fails with status "timeout".'));
     const timeoutQueue = h('div', { class: 'field' }, h('label', { for: 'p-allowed' }, 'Time allowed per task'), f.allowed,
       h('div', { class: 'hint' }, 'How long a queued task may wait for an answer before it times out. Long values suit slow work such as commissions.'));
+    const samplesEd = samplesEditor([], ctx.signal);
+    const revSel = h('select', { id: 'p-rev' }, [0, 1, 2, 3].map((n) => h('option', { value: String(n) }, n === 0 ? '0 (none)' : String(n))));
+    revSel.value = '1';
+    const queueBox = h('fieldset', null, h('legend', null, 'Portfolio and changes'),
+      h('div', { class: 'field' }, h('label', null, 'Sample work'), samplesEd.el),
+      h('div', { class: 'field' }, h('label', { for: 'p-rev' }, 'Rounds of changes included'), revSel,
+        h('div', { class: 'hint' }, 'How many times a buyer can ask for changes after you deliver, before accepting.')));
     const err = h('div');
     const submit = h('button', { type: 'submit', class: 'btn btn-primary btn-big' }, 'Publish service');
     const mode = () => { const r = form.querySelector('input[name="p-mode"]:checked'); return r ? r.value : (sf ? 'queue' : 'webhook'); };
     const syncMode = () => {
       const wh = mode() === 'webhook';
       webhookBox.hidden = !wh; f.endpoint.required = wh;
-      timeoutWebhook.hidden = !wh; timeoutQueue.hidden = wh;
+      timeoutWebhook.hidden = !wh; timeoutQueue.hidden = wh; queueBox.hidden = wh;
     };
 
     function applyTemplate(t) {
@@ -1137,6 +1221,7 @@
         h('div', null,
           timeoutWebhook,
           timeoutQueue)),
+      queueBox,
       h('div', { class: 'row' }, submit),
       err);
     form.addEventListener('change', (e) => { if (e.target && e.target.name === 'p-mode') syncMode(); });
@@ -1163,6 +1248,7 @@
       const a = inS.check(), b = outS.check(), c = ex.check();
       [a, b, c].forEach((x) => { if (!x.ok) problems.push(x.error || 'schema required'); });
       const priceCents = dollarsToCents(f.price.value);
+      if (mode() === 'queue' && samplesEd.busy()) problems.push('wait for sample uploads to finish');
       if (priceCents == null || priceCents > 100000) problems.push('price must be between $0 and $1000');
       if (problems.length) { err.appendChild(errorBox({ message: 'Fix these fields.', details: problems })); return; }
       const body = {
@@ -1170,6 +1256,7 @@
         tags: f.tags.value.split(',').map((t) => t.trim()).filter(Boolean),
         mode: m, input_schema: a.value, output_schema: b.value, price_cents: priceCents,
       };
+      if (m === 'queue') { body.samples = samplesEd.get(); body.revisions = Number(revSel.value); }
       if (c.value !== undefined) body.example_input = c.value;
       if (m === 'webhook') { body.endpoint_url = endpoint; if (health) body.health_url = health; }
       const to = parseInt(m === 'queue' ? f.allowed.value : f.timeout.value, 10);
@@ -1303,6 +1390,210 @@
     });
   }
 
+
+  /* =========================================================================
+   * Portfolios: samples, gallery, lightbox, artist cards
+   * ======================================================================= */
+  const SVG_NS = 'http://www.w3.org/2000/svg';
+  const GLYPH = {
+    audio: 'M9 18V6l10-2v12M9 18a3 3 0 1 1-3-3 3 3 0 0 1 3 3zm10-2a3 3 0 1 1-3-3 3 3 0 0 1 3 3z',
+    video: 'M3 5h18v14H3zM10 9v6l5-3z',
+    image: 'M3 5h18v14H3zM3 16l5-5 4 4 3-3 6 6M15.5 9.5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0z',
+  };
+  function svgIcon(kind) {
+    const svg = document.createElementNS(SVG_NS, 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('aria-hidden', 'true');
+    svg.setAttribute('class', 'glyph');
+    const p = document.createElementNS(SVG_NS, 'path');
+    p.setAttribute('d', GLYPH[kind] || GLYPH.image);
+    p.setAttribute('fill', 'none');
+    p.setAttribute('stroke', 'currentColor');
+    p.setAttribute('stroke-width', '1.5');
+    p.setAttribute('stroke-linejoin', 'round');
+    p.setAttribute('stroke-linecap', 'round');
+    svg.appendChild(p);
+    return svg;
+  }
+  // Media type by URL file extension (the contract's rule for samples).
+  const sampleKind = (u) => { const url = safeUrl(u); return url ? mediaKind(url, null, '') : null; };
+  const cleanSamples = (arr) => (Array.isArray(arr) ? arr.filter((x) => isObj(x) && safeUrl(x.url)).slice(0, 8) : []);
+  const capOf = (x, i) => (x.caption ? String(x.caption) : 'Sample ' + (i + 1));
+
+  function gallery(samples) {
+    const items = cleanSamples(samples);
+    if (!items.length) return null;
+    const imgs = items.filter((x) => sampleKind(x.url) === 'image');
+    const others = items.filter((x) => sampleKind(x.url) !== 'image');
+    return h('section', { class: 'panel samples', 'aria-label': 'Sample work' },
+      h('h2', null, 'Sample work'),
+      imgs.length ? h('ul', { class: 'gallery' }, imgs.map((x, i) => h('li', null,
+        h('button', { type: 'button', class: 'thumb', 'aria-label': 'Enlarge: ' + capOf(x, i), onclick: () => openLightbox(imgs, i) },
+          h('img', { src: safeUrl(x.url).href, alt: capOf(x, i), loading: 'lazy', decoding: 'async', referrerpolicy: 'no-referrer' })),
+        x.caption ? h('p', { class: 'cap' }, String(x.caption)) : null))) : null,
+      others.map((x, i) => {
+        const u = safeUrl(x.url).href;
+        return h('figure', { class: 'player' }, mediaEl(sampleKind(x.url), u, 'sample') || null,
+          h('figcaption', null, x.caption ? String(x.caption) + ' · ' : '', extLink(u, 'open file')));
+      }));
+  }
+
+  function openLightbox(imgs, start) {
+    let i = start;
+    const img = h('img', { alt: '', referrerpolicy: 'no-referrer' });
+    const cap = h('p', { class: 'cap' });
+    const count = h('span', { class: 'muted small mono' });
+    const prev = h('button', { type: 'button', class: 'btn', 'aria-label': 'Previous sample' }, '←');
+    const next = h('button', { type: 'button', class: 'btn', 'aria-label': 'Next sample' }, '→');
+    const close = h('button', { type: 'button', class: 'btn' }, 'Close');
+    const show = () => {
+      const x = imgs[i];
+      img.src = safeUrl(x.url).href; img.alt = capOf(x, i);
+      cap.textContent = x.caption ? String(x.caption) : '';
+      count.textContent = (i + 1) + ' / ' + imgs.length;
+    };
+    const step = (d) => { i = (i + d + imgs.length) % imgs.length; show(); };
+    prev.addEventListener('click', () => step(-1));
+    next.addEventListener('click', () => step(1));
+    const dlg = h('dialog', { class: 'lightbox', 'aria-label': 'Sample work' },
+      h('div', { class: 'row' }, count, h('span', { class: 'spacer' }), imgs.length > 1 ? [prev, next] : null, close), img, cap);
+    close.addEventListener('click', () => dlg.close());
+    dlg.addEventListener('keydown', (e) => {
+      if (imgs.length > 1 && e.key === 'ArrowLeft') { e.preventDefault(); step(-1); }
+      if (imgs.length > 1 && e.key === 'ArrowRight') { e.preventDefault(); step(1); }
+    });
+    dlg.addEventListener('click', (e) => { if (e.target === dlg) dlg.close(); }); // backdrop
+    const opener = document.activeElement;
+    dlg.addEventListener('close', () => { dlg.remove(); if (opener && opener.focus) opener.focus(); });
+    document.body.appendChild(dlg);
+    show();
+    if (typeof dlg.showModal === 'function') dlg.showModal(); else dlg.setAttribute('open', '');
+    close.focus();
+  }
+
+  // Editable list of {url, caption}: upload via /v1/uploads or paste a URL. Max 8.
+  function samplesEditor(initial, signal) {
+    const items = cleanSamples(initial).map((x) => ({ url: x.url, caption: x.caption ? String(x.caption) : '' }));
+    const fid = 'se-' + (++uid);
+    const list = h('ul', { class: 'plain' });
+    const state = h('div', { class: 'hint', 'aria-live': 'polite' });
+    const file = h('input', { type: 'file', id: fid, accept: 'image/png,image/jpeg,image/gif,image/webp,audio/*,video/mp4,video/webm,video/quicktime', multiple: true });
+    const urlIn = h('input', { type: 'url', id: fid + '-u', placeholder: 'or paste a URL (…png, …jpg, …mp3, …mp4)', autocomplete: 'off' });
+    const addUrl = h('button', { type: 'button', class: 'btn btn-sm' }, 'Add URL');
+    let busy = 0;
+    const say = (cls, t) => { state.className = 'hint ' + cls; state.textContent = t; };
+    function render() {
+      fill(list, items.length ? items.map((x, i) => {
+        const cap = h('input', { type: 'text', value: x.caption, maxlength: 200, placeholder: 'Caption (optional)', 'aria-label': 'Caption for sample ' + (i + 1) });
+        cap.addEventListener('input', () => { x.caption = cap.value; });
+        const k = sampleKind(x.url);
+        const pv = k === 'image'
+          ? h('img', { class: 'se-thumb', src: safeUrl(x.url).href, alt: '', referrerpolicy: 'no-referrer' })
+          : h('span', { class: 'se-thumb glyphbox' }, svgIcon(k || 'image'));
+        const rm = h('button', { type: 'button', class: 'btn btn-sm', 'aria-label': 'Remove sample ' + (i + 1) }, 'Remove');
+        rm.addEventListener('click', () => { items.splice(i, 1); render(); });
+        return h('li', { class: 'row se-row' }, pv, h('div', { class: 'se-main' }, h('div', { class: 'small mono ellipsis' }, x.url), cap), rm);
+      }) : h('li', { class: 'muted small' }, 'No samples yet.'));
+      const full = items.length >= 8;
+      file.disabled = full; urlIn.disabled = full; addUrl.disabled = full;
+    }
+    file.addEventListener('change', async () => {
+      const files = Array.from(file.files || []).slice(0, Math.max(0, 8 - items.length));
+      file.value = '';
+      for (const f of files) {
+        if (f.size > UPLOAD_MAX) { say('bad', f.name + ' is larger than 25 MB.'); continue; }
+        busy++;
+        say('', 'Uploading ' + f.name + '… 0%');
+        try {
+          const r = await uploadFile(f, (fr) => say('', 'Uploading ' + f.name + '… ' + Math.round(fr * 100) + '%'), signal);
+          if (items.length < 8 && safeUrl(r.url)) items.push({ url: r.url, caption: '' });
+          say('good', 'Uploaded ' + f.name + '.');
+          render();
+        } catch (e) {
+          if (isAbort(e)) return;
+          say('bad', 'Upload failed (' + f.name + '): ' + e.message);
+        } finally { busy--; }
+      }
+    });
+    addUrl.addEventListener('click', () => {
+      const u = urlIn.value.trim();
+      if (!safeUrl(u)) { say('bad', 'Enter an http(s) URL.'); return; }
+      if (!sampleKind(u)) { say('bad', 'Unrecognised file type. Use a URL ending in .png, .jpg, .gif, .webp, .mp3, .wav, .ogg, .flac, .m4a, .mid, .mp4, .webm or .mov.'); return; }
+      items.push({ url: u, caption: '' }); urlIn.value = ''; say('', ''); render();
+    });
+    render();
+    return {
+      el: h('div', { class: 'samples-ed' },
+        h('div', { class: 'upload' }, h('label', { class: 'inline', for: fid }, 'Upload files:'), file),
+        h('div', { class: 'row' }, h('label', { class: 'sr-only', for: fid + '-u' }, 'Sample URL'), h('div', { style: 'flex:1;min-width:0' }, urlIn), addUrl),
+        state, list,
+        h('div', { class: 'hint' }, 'Up to 8 images, audio or video files, 25 MB each. Shown on your listing; the first image is the thumbnail.')),
+      get: () => items.map((x) => (x.caption.trim() ? { url: x.url, caption: x.caption.trim() } : { url: x.url })),
+      busy: () => busy > 0,
+    };
+  }
+
+  function artistCard(s) {
+    const st = isObj(s.stats) ? s.stats : {};
+    const smp = cleanSamples(s.samples);
+    const img = smp.find((x) => sampleKind(x.url) === 'image');
+    const other = smp.find((x) => sampleKind(x.url));
+    const kind = img ? 'image' : other ? sampleKind(other.url) : (Array.isArray(s.media) && ['image', 'audio', 'video'].includes(s.media[0]) ? s.media[0] : 'image');
+    const href = '#/s/' + enc(s.slug);
+    const thumb = img
+      ? h('img', { src: safeUrl(img.url).href, alt: '', loading: 'lazy', decoding: 'async', referrerpolicy: 'no-referrer' })
+      : h('span', { class: 'glyphbox' }, svgIcon(kind), h('span', { class: 'small' }, kind === 'audio' ? 'Music & audio' : kind === 'video' ? 'Video' : 'Art'));
+    const stat = (label, value) => h('div', { class: 'stat' }, h('dt', null, label), h('dd', null, value));
+    return h('li', { class: 'card st-' + statusOf(s) },
+      h('a', { class: 'card-thumb', href, tabindex: '-1', 'aria-hidden': 'true' }, thumb),
+      h('div', { class: 'card-body' },
+        h('div', { class: 'row' }, statusTag(s), h('span', { class: 'spacer' }), h('span', { class: 'price' }, fmtPrice(num(s.price_cents) == null ? 0 : s.price_cents))),
+        h('a', { class: 'svc-name', href, 'data-slug': s.slug }, s.name || s.slug),
+        h('div', { class: 'muted small' }, 'by @' + (s.owner || '?')),
+        s.description ? h('p', { class: 'svc-desc' }, s.description) : null,
+        h('dl', { class: 'card-stats' },
+          stat('Turnaround', fmtMs(st.p50_ms)),
+          stat('Rating', fmtRating(st.rating, st.reviews)),
+          stat('Changes', num(s.revisions) != null ? String(s.revisions) : '—'))));
+  }
+
+  // Signed-out path inside a form: create an account (handle only) without leaving the page.
+  function signupInline(ctx, onDone) {
+    const id = 'su-' + (++uid);
+    const inp = h('input', { type: 'text', id, autocomplete: 'username', spellcheck: 'false', maxlength: 32 });
+    const err = h('div');
+    const btn = h('button', { type: 'submit', class: 'btn btn-primary' }, 'Create account');
+    const box = h('form', { class: 'panel signup', novalidate: true },
+      h('h3', null, 'Create an account to continue'),
+      h('p', { class: 'small' }, 'Pick a public handle. There is no email or password: you get a private key that this browser remembers. What you typed above is kept.'),
+      h('div', { class: 'field' }, h('label', { for: id }, 'Handle'), inp, h('div', { class: 'hint' }, '3–32 characters: a–z, 0–9, - or _.')),
+      h('div', { class: 'row' }, btn, h('a', { class: 'small', href: '#/account' }, 'I already have a key')), err);
+    box.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      err.replaceChildren();
+      const v = inp.value.trim().replace(/^@/, '').toLowerCase();
+      if (!/^[a-z0-9_-]{3,32}$/.test(v)) { err.appendChild(errorBox({ message: 'Handle must be 3–32 characters of a–z, 0–9, "-" or "_".' })); return; }
+      btn.disabled = true;
+      try {
+        const r = await api('POST', '/v1/accounts', { handle: v }, { signal: ctx.signal, key: '' });
+        const key = r.data && r.data.api_key;
+        if (!key) throw new Error('Server did not return an API key.');
+        setKey(String(key));
+        await loadMe(true);
+        fill(box, okBox('Account @' + ((r.data && r.data.handle) || v) + ' created and signed in.'),
+          h('div', { class: 'alert alert-warn' }, h('b', null, 'Save your key now. '), 'It is the only way back into this account from another browser.'),
+          h('div', { class: 'row' }, h('div', { class: 'secret', style: 'flex:1' }, String(key)), copyBtn(String(key))));
+        if (onDone) onDone();
+      } catch (ex) {
+        if (isAbort(ex)) return;
+        btn.disabled = false;
+        err.appendChild(errorBox(ex));
+      }
+    });
+    setTimeout(() => inp.focus(), 0);
+    return box;
+  }
+
   const PRIM = ['string', 'integer', 'number', 'boolean'];
   const typeOf = (sch) => (Array.isArray(sch.type) ? sch.type.find((t) => t !== 'null') : sch.type);
   function isFlat(schema) {
@@ -1348,10 +1639,10 @@
     let selected;
     const row = h('div', { class: 'btnrow', role: 'group', 'aria-labelledby': labelId });
     const btns = values.map((v) => h('button', { type: 'button', class: 'btn choice', 'aria-pressed': 'false' }, String(v)));
-    const select = (i) => {
+    const select = (i, quiet) => {
       selected = i;
       btns.forEach((b, j) => b.setAttribute('aria-pressed', String(j === i)));
-      if (btns[i]) btns[i].focus();
+      if (btns[i] && !quiet) btns[i].focus();
     };
     btns.forEach((b, i) => b.addEventListener('click', () => select(i)));
     add(row, btns);
@@ -1374,7 +1665,7 @@
     const desc = p.description ? h('p', { class: 'fdesc muted' }, String(p.description)) : null;
     const wrap = h('div', { class: 'field' }, label, desc);
     const fail = (msg) => ({ ok: false, error: name + ': ' + msg });
-    let read, keys = null, choice = null, focus;
+    let read, keys = null, choice = null, focus, set = () => {};
 
     if ('const' in p) {
       wrap.appendChild(h('code', null, pretty(p.const)));
@@ -1387,10 +1678,12 @@
         wrap.appendChild(choice.el);
         keys = choice.keys; focus = choice.focus;
         read = () => { const v = choice.get(); return v === undefined ? (required ? fail('choose a value') : { ok: true, set: false }) : { ok: true, set: true, value: v }; };
+        set = (v) => { const i = values.findIndex((x) => x === v); if (i >= 0) choice.select(i, true); };
       } else {
         const sel = h('select', { id }, h('option', { value: '' }, '— choose —'), values.map((v, i) => h('option', { value: String(i) }, String(v))));
         wrap.appendChild(sel); focus = () => sel.focus();
         read = () => (sel.value === '' ? (required ? fail('choose a value') : { ok: true, set: false }) : { ok: true, set: true, value: values[Number(sel.value)] });
+        set = (v) => { const i = values.findIndex((x) => x === v); sel.value = i >= 0 ? String(i) : ''; };
       }
     } else if (t === 'boolean') {
       const cb = h('input', { type: 'checkbox', id: id + '-cb' });
@@ -1398,6 +1691,7 @@
       wrap.appendChild(h('label', { class: 'inline', for: id + '-cb' }, cb, 'true'));
       focus = () => cb.focus();
       read = () => ({ ok: true, set: true, value: cb.checked });
+      set = (v) => { cb.checked = v === true; };
     } else if (t === 'integer' || t === 'number') {
       const inp = h('input', { type: 'number', id, step: t === 'integer' ? 1 : 'any', min: num(p.minimum), max: num(p.maximum), inputmode: t === 'integer' ? 'numeric' : 'decimal' });
       wrap.appendChild(inp); focus = () => inp.focus();
@@ -1408,6 +1702,7 @@
         if (t === 'integer' && !Number.isInteger(v)) return fail('must be an integer');
         return { ok: true, set: true, value: v };
       };
+      set = (v) => { inp.value = num(v) != null ? String(v) : ''; };
     } else if (t === 'string' && p.format === 'uri') {
       const cmt = typeof p.contentMediaType === 'string' ? p.contentMediaType : '';
       const inp = h('input', { type: 'url', id, autocomplete: 'off', placeholder: 'https://…' });
@@ -1420,7 +1715,9 @@
         const url = safeUrl(inp.value.trim());
         fill(preview, url ? renderValue(name, url.href, 0, p) : null);
       };
-      inp.addEventListener('change', showPreview);
+      // Preview on debounced input, not on change: a blur-time layout shift would swallow a click on Submit.
+      let pvT = null;
+      inp.addEventListener('input', () => { clearTimeout(pvT); pvT = setTimeout(showPreview, 400); });
       file.addEventListener('change', async () => {
         const f = file.files && file.files[0];
         if (!f) return;
@@ -1451,6 +1748,7 @@
         if (!safeUrl(v)) return fail('must be an http(s) URL');
         return { ok: true, set: true, value: v };
       };
+      set = (v) => { inp.value = typeof v === 'string' ? v : ''; showPreview(); };
     } else if (t === 'string') {
       const long = num(p.maxLength) == null || p.maxLength > 200;
       const inp = long
@@ -1463,6 +1761,7 @@
         if (v === '') return required ? fail('required') : { ok: true, set: false };
         return { ok: true, set: true, value: v };
       };
+      set = (v) => { inp.value = typeof v === 'string' ? v : ''; };
     } else { // array of strings
       const ta = h('textarea', { id, rows: 5, class: 'prose' });
       wrap.appendChild(ta); wrap.appendChild(h('div', { class: 'hint' }, 'One item per line. Empty lines are ignored.'));
@@ -1473,8 +1772,9 @@
         if (!items.length && !required) return { ok: true, set: false };
         return { ok: true, set: true, value: items };
       };
+      set = (v) => { ta.value = Array.isArray(v) ? v.map(String).join('\n') : ''; };
     }
-    return { name, el: wrap, read, keys, choice, focus };
+    return { name, el: wrap, read, keys, choice, focus, set };
   }
 
   // Returns {el, read() -> {ok, value} | {ok:false, errors}, focus(), keys, choice}
@@ -1488,15 +1788,17 @@
         el: h('div', null, fields.map((f) => f.el)),
         keyField: withKeys || null,
         focus: () => { const f = fields.find((x) => x.focus); if (f) f.focus(); },
-        read() {
+        // partial=true: return whatever is filled in, ignoring validation errors (for drafts).
+        read(partial) {
           const out = {}, errors = [];
           for (const f of fields) {
             const r = f.read();
             if (!r.ok) errors.push(r.error);
             else if (r.set) out[f.name] = r.value;
           }
-          return errors.length ? { ok: false, errors } : { ok: true, value: out };
+          return errors.length && !partial ? { ok: false, errors } : { ok: true, value: out };
         },
+        set(obj) { if (isObj(obj)) fields.forEach((f) => { if (Object.prototype.hasOwnProperty.call(obj, f.name)) f.set(obj[f.name]); }); },
       };
     }
     const id = 'af-' + (++uid);
@@ -1508,9 +1810,10 @@
         h('details', null, h('summary', { class: 'small' }, 'Schema'), h('pre', { class: 'small' }, pretty(schema)))),
       keyField: null,
       focus: () => ta.focus(),
-      read() {
-        try { return { ok: true, value: JSON.parse(ta.value) }; } catch (e) { return { ok: false, errors: ['Invalid JSON: ' + e.message] }; }
+      read(partial) {
+        try { return { ok: true, value: JSON.parse(ta.value) }; } catch (e) { return partial ? { ok: true, value: undefined } : { ok: false, errors: ['Invalid JSON: ' + e.message] }; }
       },
+      set(v) { if (v !== undefined) ta.value = pretty(v); },
     };
   }
 
@@ -1619,6 +1922,12 @@
       }
       const outSchema = isObj(t.output_schema) ? t.output_schema : s.output_schema;
       const form = buildAnswerForm(outSchema, ctx.signal);
+      const rev = isObj(t.revision) ? t.revision : null;
+      if (rev && rev.previous_output !== undefined && rev.previous_output !== null) form.set(rev.previous_output);
+      const revBanner = rev ? h('div', { class: 'alert alert-warn' }, h('b', null, 'Changes requested: '), String(rev.note || '(no note)'),
+        rev.previous_output !== undefined && rev.previous_output !== null
+          ? h('details', { open: true, style: 'margin-top:6px' }, h('summary', { class: 'small' }, 'Your previous delivery (prefilled below)'),
+            h('div', { class: 'inputview' }, renderValue('output', rev.previous_output, 0, outSchema))) : null) : null;
       const cd = h('span', { class: 'countdown' });
       const err = h('div');
       const submit = h('button', { type: 'submit', class: 'btn btn-primary btn-big' }, 'Submit');
@@ -1691,8 +2000,9 @@
       document.addEventListener('keydown', keyHandler);
 
       fill(taskSlot, h('section', { class: 'panel task', 'aria-labelledby': 'task-h' },
-        h('div', { class: 'task-head' }, h('h2', { id: 'task-h', style: 'margin:0' }, 'Task'), cd,
+        h('div', { class: 'task-head' }, h('h2', { id: 'task-h', style: 'margin:0' }, rev ? 'Task · revision' : 'Task'), cd,
           h('span', { class: 'muted small mono' }, 'call ' + t.call_id + ' · received ' + fmtAgo(t.created_at))),
+        revBanner,
         h('div', { class: 'grid2' },
           h('div', { class: 'inputview' }, h('h3', null, 'Input'), renderValue('input', t.input, 0, s.input_schema)),
           answerForm)));
@@ -1841,15 +2151,114 @@
         return h('tr', null,
           h('td', null, h('a', { class: 'mono', href: '#/call/' + enc(c.call_id) }, String(c.call_id))),
           h('td', null, slug ? h('a', { href: '#/s/' + enc(slug) }, slug) : '—'),
-          h('td', { class: 'mono' }, String(c.status || '?')),
+          h('td', null, h('span', { class: 'mono' }, String(c.status || '?')),
+            c.status === 'done' && c.payment === 'held' ? [' ', h('a', { class: 'badge badge-act', href: '#/call/' + enc(c.call_id) }, 'needs your review')] : null,
+            c.payment && !(c.status === 'done' && c.payment === 'held') ? h('span', { class: 'muted small' }, ' · ' + String(c.payment)) : null),
           h('td', { class: 'num' }, fmtPrice(c.price_cents)),
           h('td', { class: 'num' }, fmtAgo(c.created_at)));
       }))));
   }
 
   /* =========================================================================
-   * Call  #/call/:id
+   * Call  #/call/:id  (buyer review: accept / request changes / dispute)
    * ======================================================================= */
+  function fmtUntil(ts) {
+    const d = ts - Date.now();
+    if (d <= 60000) return 'within a minute';
+    if (d < 3600000) return 'in ' + Math.ceil(d / 60000) + ' min';
+    if (d < 86400000) { const hh = Math.floor(d / 3600000), mm = Math.floor((d % 3600000) / 60000); return 'in ' + hh + ' h' + (mm ? ' ' + mm + ' min' : ''); }
+    const dd = Math.floor(d / 86400000), hh = Math.floor((d % 86400000) / 3600000);
+    return 'in ' + dd + (dd === 1 ? ' day' : ' days') + (hh ? ' ' + hh + ' h' : '');
+  }
+
+  // One plain sentence about where the money is. null for free calls.
+  function paymentLine(c, isBuyer) {
+    if (!c.payment) return null;
+    const amt = fmtUsd(c.price_cents);
+    switch (c.payment) {
+      case 'held':
+        if (c.status === 'done') {
+          return 'Payment of ' + amt + ' is held until ' + (isBuyer ? 'you accept' : 'the buyer accepts') + '.' +
+            (num(c.release_at) != null ? ' It releases to the artist automatically ' + fmtUntil(c.release_at) + (isBuyer ? ' if you do nothing.' : '.') : '');
+        }
+        return 'Payment of ' + amt + ' is held' + (c.revision_note ? ' while changes are made.' : ' until the delivery is accepted.');
+      case 'released': return 'Payment of ' + amt + ' was released to the artist.';
+      case 'refunded': return amt + ' was refunded' + (isBuyer ? ' to your balance.' : ' to the buyer.');
+      case 'disputed': return 'Payment of ' + amt + ' is disputed and on hold. A moderator will review the delivery and decide.';
+      default: return 'Payment: ' + String(c.payment);
+    }
+  }
+
+  const H72 = 72 * 3600000;
+  function canRequestChanges(c) {
+    if (c.status !== 'done' || !(num(c.revisions_left) > 0)) return false;
+    if (c.payment === 'held') return true;
+    if (!c.payment && num(c.created_at) != null) return Date.now() - (c.created_at + (num(c.latency_ms) || 0)) < H72;
+    return false;
+  }
+
+  function decisionBlock(ctx, call, onCall) {
+    const held = call.payment === 'held';
+    const left = num(call.revisions_left) || 0;
+    const err = h('div');
+    const slot = h('div');
+    async function post(path, body, btn) {
+      err.replaceChildren();
+      btn.disabled = true;
+      try {
+        const r = await api('POST', '/v1/calls/' + enc(call.call_id) + path, body, { signal: ctx.signal });
+        onCall(isObj(r.data) ? r.data : null);
+      } catch (e) {
+        if (isAbort(e)) return;
+        btn.disabled = false;
+        err.appendChild(errorBox(e, e.code === 'no_revisions_left' ? 'No changes left' : e.code === 'not_revisable' ? 'Not possible' : 'Error'));
+      }
+    }
+    function noteForm(label, hint, min, submitLabel, path, key, cls) {
+      const id = 'df-' + (++uid);
+      const ta = h('textarea', { id, rows: 4, class: 'prose', maxlength: 2000, 'aria-describedby': id + '-h' });
+      const b = h('button', { type: 'submit', class: 'btn ' + cls }, submitLabel);
+      const cancel = h('button', { type: 'button', class: 'btn' }, 'Cancel');
+      const f = h('form', { class: 'panel', novalidate: true, style: 'margin-top:10px' },
+        h('label', { for: id }, label), h('div', { class: 'hint', id: id + '-h', style: 'margin-bottom:6px' }, hint), ta,
+        h('div', { class: 'row', style: 'margin-top:8px' }, b, cancel));
+      cancel.addEventListener('click', () => slot.replaceChildren());
+      f.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const v = ta.value.trim();
+        if (v.length < min) { fill(err, errorBox({ message: 'Please write at least ' + min + ' characters.' })); ta.focus(); return; }
+        post(path, { [key]: v }, b);
+      });
+      fill(slot, f);
+      ta.focus();
+    }
+    const accept = held ? h('button', { type: 'button', class: 'btn btn-primary btn-big' }, 'Accept and release payment') : null;
+    if (accept) {
+      accept.addEventListener('click', () => {
+        if (!window.confirm('Accept this delivery and release ' + fmtUsd(call.price_cents) + ' to the artist? This cannot be undone.')) return;
+        post('/accept', {}, accept);
+      });
+    }
+    const revBtn = canRequestChanges(call) ? h('button', { type: 'button', class: 'btn' }, 'Request changes (' + left + ' left)') : null;
+    if (revBtn) {
+      revBtn.addEventListener('click', () => noteForm('What should change?',
+        'Be specific. The artist sees this note next to their previous delivery. ' + left + (left === 1 ? ' round' : ' rounds') + ' of changes left.' + (held ? ' Payment stays held.' : ''),
+        3, 'Send change request', '/revision', 'note', 'btn-primary'));
+    }
+    const disBtn = held ? h('button', { type: 'button', class: 'linkbtn' }, 'Problem with this delivery?') : null;
+    if (disBtn) {
+      disBtn.addEventListener('click', () => noteForm('What is wrong with this delivery?',
+        'Use this if the work is missing, not what you asked for, or unusable. Payment stays on hold and a moderator reviews the brief and the delivery.',
+        10, 'Open a dispute', '/dispute', 'reason', 'btn-danger'));
+    }
+    if (!accept && !revBtn) return null;
+    return h('section', { class: 'panel decision', 'aria-labelledby': 'dec-h' },
+      h('h2', { id: 'dec-h' }, held ? 'Your decision' : 'Need changes?'),
+      held ? h('p', null, paymentLine(call, true)) : null,
+      h('div', { class: 'row' }, accept, revBtn, disBtn ? h('span', { class: 'spacer' }) : null, disBtn),
+      slot, err);
+  }
+
   async function viewCall(ctx, id) {
     setTitle('Call ' + id);
     await loadMe();
@@ -1868,43 +2277,78 @@
     }
     if (ctx.signal.aborted) return;
     if (svc) setTitle('Call · ' + (svc.name || slug));
+    const isBuyer = !(svc && isOwner(svc));
+    const schema = svc && svc.output_schema;
     const statusEl = h('p', { class: 'callstatus mono', 'aria-live': 'polite' });
+    const payEl = h('p', { class: 'payline' });
     const facts = h('dl', { class: 'statgrid' });
+    const decisionSlot = h('div');
     const resultBox = h('div');
     add(main, h('h1', null, 'Call ', h('code', null, String(call.call_id || id))),
       h('p', null, slug ? h('a', { href: '#/s/' + enc(slug) }, svc ? svc.name || slug : slug) : null, svc ? [' · by @', svc.owner] : null),
-      statusEl, facts,
+      statusEl, payEl, facts,
       h('div', { class: 'grid2' },
-        h('section', { class: 'panel inputview' }, h('h2', null, 'Input'), renderValue('input', call.input, 0, svc && svc.input_schema)),
-        h('section', { class: 'panel' }, resultBox)));
+        h('section', { class: 'panel inputview' }, h('h2', null, 'Brief (input)'), renderValue('input', call.input, 0, svc && svc.input_schema)),
+        h('section', { class: 'panel' }, resultBox)),
+      decisionSlot);
 
     const stat = (label, value) => h('div', { class: 'stat' }, h('dt', null, label), h('dd', null, value));
-    let tick = null;
-    function render() {
-      const pend = call.status === 'pending' || call.status === 'claimed';
-      statusEl.textContent = pend
+    const pending = () => call.status === 'pending' || call.status === 'claimed';
+    function renderStatus() {
+      statusEl.textContent = pending()
         ? pendingText(call.status) + ' · created ' + fmtAgo(call.created_at) + ' · this page updates automatically'
-        : String(call.status || 'unknown');
+        : isBuyer && call.status === 'done' && call.payment === 'held' ? 'delivered · check the work below, then decide'
+          : String(call.status || 'unknown');
+      const pl = paymentLine(call, isBuyer);
+      payEl.textContent = pl || '';
+      payEl.hidden = !pl;
+      payEl.className = 'payline pay-' + (call.payment || 'none');
       fill(facts,
         stat('Status', String(call.status || '?')),
         stat('Price', fmtPrice(call.price_cents)),
+        call.payment ? stat('Payment', String(call.payment)) : null,
         stat('Created', fmtAgo(call.created_at)),
         stat('Latency', fmtMs(call.latency_ms)),
-        svc && svc.mode === 'queue' && num(call.created_at) != null && num(svc.timeout_ms) != null && pend
+        num(call.revisions_left) != null ? stat('Changes left', String(call.revisions_left)) : null,
+        svc && svc.mode === 'queue' && num(call.created_at) != null && num(svc.timeout_ms) != null && pending()
           ? stat('Deadline', fmtClock(call.created_at + svc.timeout_ms - Date.now()) + ' left') : null);
-      fill(resultBox, pend ? h('p', { class: 'muted' }, 'No result yet.')
-        : callResult(ctx, call, svc && svc.output_schema, null, !(svc && isOwner(svc))));
     }
-    render();
-    if (call.status === 'pending' || call.status === 'claimed') {
-      tick = setInterval(() => { if (call.status === 'pending' || call.status === 'claimed') render(); }, 30000);
-      ctx.onLeave(() => clearInterval(tick));
+    function render() {
+      renderStatus();
+      if (pending()) {
+        const prev = call.output !== undefined && call.output !== null;
+        fill(resultBox, call.revision_note
+          ? [h('div', { class: 'alert alert-warn' }, h('b', null, 'Changes requested: '), String(call.revision_note), h('div', null, 'Waiting for ' + T('worker') + '.')),
+            prev ? [h('h3', null, 'Previous version'), h('div', { class: 'inputview prev' }, renderValue('output', call.output, 0, schema))] : null]
+          : h('p', { class: 'muted' }, 'No result yet.'));
+      } else {
+        fill(resultBox, callResult(ctx, call, schema, null, isBuyer, true));
+      }
+      const dec = isBuyer && call.status === 'done' ? decisionBlock(ctx, call, (c) => {
+        if (c) call = Object.assign({}, call, c);
+        loadMe(true);
+        render();
+        follow();
+      }) : null;
+      fill(decisionSlot, dec);
+      if (dec && call.payment === 'held') payEl.hidden = true; // the decision block states it
+
+    }
+    let following = false;
+    async function follow() {
+      if (following || !pending()) return;
+      following = true;
+      const tick = setInterval(() => { if (pending()) renderStatus(); }, 30000);
       try {
         call = await waitForCall(call, ctx.signal, (c) => { call = c; render(); },
           (e, b) => { statusEl.textContent = 'connection problem, retrying in ' + fmtMs(b); });
-      } finally { clearInterval(tick); }
-      render();
+        render();
+      } catch (e) {
+        if (!isAbort(e)) statusEl.textContent = 'Could not refresh: ' + e.message;
+      } finally { clearInterval(tick); following = false; }
     }
+    render();
+    follow();
   }
 
   /* =========================================================================
@@ -1937,7 +2381,8 @@
         h('dt', null, 'Balance'), h('dd', null, h('span', { class: 'bigmoney mono' }, fmtUsd(data.balance_cents))),
         h('dt', null, 'Earned (all time)'), h('dd', { class: 'mono' }, fmtUsd(S.me && S.me.earned_cents)),
         h('dt', null, 'Platform fee'), h('dd', null, num(data.fee_percent) != null ? data.fee_percent + '% of each paid call' : '—')),
-        h('p', { class: 'muted small', style: 'margin:8px 0 0' }, 'Paid calls are held from your balance when made and refunded automatically if they fail or time out.'));
+        h('p', { class: 'muted small', style: 'margin:8px 0 0' }, 'Paid calls are held from your balance when made and refunded automatically if they fail or time out.'),
+        h('p', { class: 'muted small', style: 'margin:4px 0 0' }, 'If you sell commissions: payment is released to you when the buyer accepts the delivery, or automatically when the review window ends, and is then credited as earnings.'));
     }
     function renderLedger() {
       const rows = Array.isArray(data.ledger) ? data.ledger.filter(isObj) : [];
@@ -2035,7 +2480,8 @@
     const reportsP = h('section', { class: 'panel' });
     const payoutsP = h('section', { class: 'panel' });
     const creditP = h('section', { class: 'panel' });
-    add(main, h('div', { class: 'grid2' }, reportsP, payoutsP), creditP);
+    const disputesP = h('section', { class: 'panel' });
+    add(main, h('div', { class: 'grid2' }, reportsP, payoutsP), disputesP, creditP);
 
     // Runs an admin action from a button, shows errors in `slot`, then reloads.
     function act(btn, slot, fn, reload) {
@@ -2130,7 +2576,32 @@
       finally { cBtn.disabled = false; }
     });
     fill(creditP, cForm);
-    await Promise.all([loadReports(), loadPayouts()]);
+    async function loadDisputes() {
+      const err = h('div');
+      try {
+        const r = await api('GET', '/v1/admin/disputes', undefined, { signal: ctx.signal });
+        const ds = r.data && Array.isArray(r.data.disputes) ? r.data.disputes.filter(isObj) : [];
+        const decide = (d, action, label, cls, question) => act(h('button', { type: 'button', class: 'btn btn-sm ' + cls }, label), err, async () => {
+          if (!window.confirm(question)) throw new DOMException('Aborted', 'AbortError');
+          return post('/v1/admin/disputes/' + enc(d.call_id), { action });
+        }, loadDisputes);
+        fill(disputesP, h('h2', null, 'Disputes (' + ds.length + ')'), err,
+          ds.length ? h('ul', { class: 'plain' }, ds.map((d) => {
+            const slug = svcSlugOf(d.service);
+            return h('li', null,
+              h('div', { class: 'row' }, slug ? h('a', { href: '#/s/' + enc(slug) }, slug) : '—', h('span', { class: 'price' }, fmtUsd(d.price_cents)),
+                h('span', { class: 'muted small' }, 'buyer @' + d.buyer + ' · ' + fmtAgo(d.created_at) + ' · call '), h('code', { class: 'small' }, String(d.call_id))),
+              h('p', { class: 'desc', style: 'margin:6px 0' }, h('b', null, 'Reason: '), String(d.reason || '')),
+              h('div', { class: 'grid2' },
+                h('div', { class: 'inputview' }, h('h3', null, 'Brief'), renderValue('input', d.input, 0)),
+                h('div', { class: 'inputview' }, h('h3', null, 'Delivery'), renderValue('output', d.output, 0))),
+              h('div', { class: 'row', style: 'margin-top:6px' },
+                decide(d, 'release', 'Pay artist', 'btn-primary', 'Release ' + fmtUsd(d.price_cents) + ' to the artist?'),
+                decide(d, 'refund', 'Refund buyer', '', 'Refund ' + fmtUsd(d.price_cents) + ' to @' + d.buyer + '?')));
+          })) : h('p', { class: 'muted' }, 'No open disputes.'));
+      } catch (e) { if (!isAbort(e)) fill(disputesP, h('h2', null, 'Disputes'), errorBox(e)); }
+    }
+    await Promise.all([loadReports(), loadPayouts(), loadDisputes()]);
   }
 
   /* =========================================================================
