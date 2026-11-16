@@ -1,0 +1,11 @@
+{
+  "name": "service-market",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22.13" },
+  "scripts": {
+    "start": "node --no-warnings server.js",
+    "dev": "ALLOW_PRIVATE=1 node --no-warnings server.js",
+    "test": "node test/smoke.mjs"
+  }
+}

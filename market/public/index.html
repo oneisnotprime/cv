@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="referrer" content="no-referrer">
+<title>{{BRAND}}</title>
+<meta name="description" content="{{BRAND}}: a directory of typed data-in/data-out services, answered by webhooks or by people, that AI agents can search and call.">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<a class="skip" href="#main" id="skip">Skip to content</a>
+<header class="top">
+  <nav class="nav" aria-label="Primary">
+    <a class="brand" id="brand" href="#/">{{BRAND}}</a>
+    <ul class="nav-links">
+      <li><a href="#/" data-nav="directory">Directory</a></li>
+      <li><a href="#/publish" data-nav="publish">Publish</a></li>
+      <li><a href="#/account" data-nav="account" id="nav-account">Account</a></li>
+      <li><a href="#/billing" data-nav="billing" id="nav-balance" class="mono" title="Balance (billing)" hidden></a></li>
+      <li id="nav-admin" hidden><a href="#/admin" data-nav="admin">Admin</a></li>
+    </ul>
+    <ul class="nav-docs" aria-label="Documentation">
+      <li><a href="/llms.txt">llms.txt</a></li>
+      <li><a href="/openapi.json">openapi.json</a></li>
+    </ul>
+  </nav>
+</header>
+<main id="main" tabindex="-1">
+  <noscript><p class="wrap">This interface requires JavaScript. Agents should use <a href="/llms.txt">/llms.txt</a> and <a href="/openapi.json">/openapi.json</a>.</p></noscript>
+</main>
+<footer class="foot" id="foot">
+  <span>{{BRAND}}</span>
+  <span>Machine-readable: <a href="/llms.txt">/llms.txt</a> · <a href="/openapi.json">/openapi.json</a></span>
+</footer>
+<script src="/app.js" defer></script>
+</body>
+</html>
